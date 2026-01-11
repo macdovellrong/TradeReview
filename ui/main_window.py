@@ -1,5 +1,6 @@
 import finplot as fplt
 import pandas as pd
+import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QComboBox, QLabel, QSlider, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget)
@@ -49,8 +50,14 @@ class ChartWidget(QWidget):
         self.ax.vb.x_indexed = True
         self.ax.vb.win = self.glw 
         self.glw._isMouseLeftDrag = False 
+        self.ax.vb.master_viewbox = None # 修复 AttributeError
         
         def set_datasrc(ds):
+            # 手动初始化这些属性，防止 finplot 添加指标时报错
+            if not hasattr(ds, 'init_x0'):
+                ds.init_x0 = 0
+            if not hasattr(ds, 'init_x1'):
+                ds.init_x1 = len(ds.df) if hasattr(ds, 'df') else 0
             self.ax.vb.datasrc = ds
         self.ax.vb.set_datasrc = set_datasrc
 
@@ -60,26 +67,22 @@ class ChartWidget(QWidget):
 
         # 自定义滚轮逻辑
         def custom_wheel_event(ev, axis=None):
-            # print(f"Wheel Event! Axis={axis}, Modifiers={ev.modifiers()}") # Debug
-            if ev.isAccepted():
-                return
+            # 强制接管事件，不检查 isAccepted
             
             # 计算缩放比例
-            delta = ev.angleDelta().y()
+            # PyqtGraph 的 QGraphicsSceneWheelEvent 可能没有 angleDelta
+            # 使用 delta() 方法
+            delta = ev.delta()
             if delta == 0:
                 return
                 
             s = 0.85 ** (delta / 120.0)
             
             # 获取缩放中心
-            # 如果是从 Axis 传来的事件，或者直接在 ViewBox 上
             try:
-                # 尝试获取场景坐标
                 pos = ev.scenePosition()
-                # 映射到 ViewBox 内部坐标
                 center = self.ax.vb.mapSceneToView(pos)
             except:
-                # Fallback if something fails
                 center = None
 
             if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -91,6 +94,8 @@ class ChartWidget(QWidget):
             
             ev.accept()
         
+        # 保存这个函数引用，以便后续重新绑定
+        self._custom_wheel_event = custom_wheel_event
         self.ax.vb.wheelEvent = custom_wheel_event
         
         # 属性设置
@@ -109,6 +114,7 @@ class ChartWidget(QWidget):
         
         self.current_period = "1min"
         self.plot_item = None 
+        self.indicator_items = {} # 存储指标对象 {name: item}
         self.combo_period.currentTextChanged.connect(self.on_period_change)
 
     def on_period_change(self, text):
@@ -126,15 +132,58 @@ class ChartWidget(QWidget):
             self.plot_item = fplt.candlestick_ochl(df[['open', 'close', 'high', 'low']], ax=self.ax)
             self.ax.showGrid(True, True)
             self.ax.setLogMode(y=False)
+            self.plot_item.setZValue(10)
         else:
             self.plot_item.update_data(df[['open', 'close', 'high', 'low']])
         
+        # 2. 绘制指标
+        ema_colors = {
+            'EMA20': '#FF0000', 'EMA30': '#FF8800', 'EMA40': '#FFFF00', 
+            'EMA50': '#00FF00', 'EMA60': '#0000FF'
+        }
+        
+        # 准备 X 轴数据 (确保是 np.array)
+        if self.ax.vb.x_indexed:
+             x_data = np.arange(len(df))
+        else:
+             x_data = df.index.astype(np.int64) // 10**9 
+             
+        # 绘制 EMA
+        for name, color in ema_colors.items():
+            if name in df.columns:
+                # 强制转换为 float64 的 numpy array
+                y_data = df[name].to_numpy(dtype=np.float64)
+                
+                if name not in self.indicator_items:
+                    curve = pg.PlotCurveItem(x=x_data, y=y_data, pen=pg.mkPen(color, width=1.5), name=name)
+                    self.ax.addItem(curve)
+                    self.indicator_items[name] = curve
+                else:
+                    self.indicator_items[name].setData(x=x_data, y=y_data)
+
+        # 绘制布林带
+        bb_color = '#FFFFFF'
+        for name in ['BB_Upper', 'BB_Lower']:
+            if name in df.columns:
+                y_data = df[name].to_numpy(dtype=np.float64)
+                
+                if name not in self.indicator_items:
+                    curve = pg.PlotCurveItem(x=x_data, y=y_data, pen=pg.mkPen(bb_color, width=1), name=name)
+                    self.ax.addItem(curve)
+                    self.indicator_items[name] = curve
+                else:
+                    self.indicator_items[name].setData(x=x_data, y=y_data)
+
         if len(df) > 0:
             y_min = df['low'].min()
             y_max = df['high'].max()
             y_pad = (y_max - y_min) * 0.05
             self.ax.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
             self.ax.setXRange(0, len(df), padding=0.02)
+            
+        # 重新绑定滚轮事件，防止被覆盖
+        if hasattr(self, '_custom_wheel_event'):
+            self.ax.vb.wheelEvent = self._custom_wheel_event
 
 
 class MainWindow(QWidget):

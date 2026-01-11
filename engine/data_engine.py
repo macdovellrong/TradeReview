@@ -47,6 +47,9 @@ class DataEngine:
         # 4. 清洗
         df_candles.dropna(inplace=True)
         
+        # 5. 计算指标
+        df_candles = self._calculate_indicators(df_candles)
+        
         return df_candles
 
     def get_candles_by_time(self, timeframe, end_time, count=200):
@@ -59,7 +62,10 @@ class DataEngine:
             
         # 1. 截取到当前回放时间点的数据
         mask = self.df_ticks.index <= end_time
-        # 为了性能，如果数据量太大，可以只截取最近的一段 Tick 数据，这里暂且全量截取
+        # 为了指标计算准确，需要多截取一些历史数据
+        # 假设最大周期 60，我们需要至少前 200 根来让 EMA 稳定
+        # 所以这里我们不限制 recent_ticks 的起始点，或者限制得宽松一些
+        # 暂时全量截取，如果性能有问题再优化
         recent_ticks = self.df_ticks.loc[mask]
         
         if len(recent_ticks) == 0:
@@ -70,8 +76,27 @@ class DataEngine:
         vol = recent_ticks['volume'].resample(timeframe).sum()
         df_candles = pd.concat([ohlc, vol], axis=1).dropna()
         
-        # 3. 只返回最近的 count 根，保证绘图流畅
+        # 3. 计算指标 (在切片前计算，保证数值准确)
+        df_candles = self._calculate_indicators(df_candles)
+        
+        # 4. 只返回最近的 count 根
         return df_candles.tail(count)
+
+    def _calculate_indicators(self, df):
+        """计算 EMA 和 布林带"""
+        # EMA
+        for span in [20, 30, 40, 50, 60]:
+            df[f'EMA{span}'] = df['close'].ewm(span=span, adjust=False).mean()
+        
+        # Bollinger Bands (20, 2)
+        # 很多软件用的是 SMA 作为中轨
+        sma20 = df['close'].rolling(window=20).mean()
+        std20 = df['close'].rolling(window=20).std()
+        df['BB_Upper'] = sma20 + 2 * std20
+        df['BB_Lower'] = sma20 - 2 * std20
+        # df['BB_Mid'] = sma20 # 如果需要画中轨
+        
+        return df
 
 if __name__ == "__main__":
     pass
