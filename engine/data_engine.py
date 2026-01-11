@@ -26,6 +26,29 @@ class DataEngine:
         except Exception as e:
             print(f"Error loading data: {e}")
 
+    def get_candles(self, timeframe='1min'):
+        """
+        将 Tick 数据重采样为 OHLCV K线数据 (全量)
+        """
+        if self.df_ticks is None:
+            return None
+
+        print(f"Resampling to {timeframe}...")
+        
+        # 1. 价格 OHLC
+        ohlc = self.df_ticks['price'].resample(timeframe).ohlc()
+        
+        # 2. 成交量 Sum
+        vol = self.df_ticks['volume'].resample(timeframe).sum()
+        
+        # 3. 合并
+        df_candles = pd.concat([ohlc, vol], axis=1)
+        
+        # 4. 清洗
+        df_candles.dropna(inplace=True)
+        
+        return df_candles
+
     def get_candles_by_time(self, timeframe, end_time, count=200):
         """
         获取截止到 end_time 的最近 count 根 K线
