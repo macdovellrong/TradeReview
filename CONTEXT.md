@@ -3,15 +3,20 @@
 ## 架构说明 (Architecture)
 1.  **数据流**: `DataEngine` 负责加载 Parquet 数据并利用 Pandas 的 `resample` 功能动态合成 K 线。指标计算（EMA, BB）也在 Engine 层预先计算完成。
 2.  **UI 架构**:
-    *   `MainWindow`: 管理全局控制面板、布局切换逻辑和定时器。
-    *   `ChartWidget`: 封装了 PyqtGraph 的 `GraphicsLayoutWidget`。由于 Finplot 的 `create_plot_widget` 在手动嵌入时存在坐标轴显示不稳定的问题，目前的方案是使用原生的 `pg.PlotItem` 并通过 Monkeypatch 注入 Finplot 所需的属性 (`yscale`, `datasrc`, `win` 等)，从而利用 Finplot 的 `candlestick_ochl` 进行高性能绘制。
-3.  **布局管理**: 通过动态重建布局容器（`switch_layout`）实现了 Vertical、Grid、Tabs 模式的无缝切换。
+    *   `MainWindow`: 管理全局控制面板、布局切换逻辑、定时器和进度条同步。
+    *   `ChartWidget`: 封装了 PyqtGraph 的 `GraphicsLayoutWidget`。
+        *   **绘图核心**: 使用 `pg.GraphicsLayoutWidget` + `addPlot` 创建原生 PlotItem。
+        *   **Monkeypatch**: 为了使用 Finplot 的高性能 K 线绘制函数 (`candlestick_ochl`)，对 `ViewBox` 进行了 Monkeypatch，模拟了 Finplot 所需的 `yscale`, `datasrc`, `win` 等属性。
+        *   **指标绘制**: 指标线（EMA/BB）使用原生的 `pg.PlotCurveItem` 绘制，并强制将数据转换为 `float64` 的 numpy array，彻底避免了与 Finplot 内部数据源管理的冲突。
+        *   **交互**: 
+            *   自定义 `wheelEvent` 实现 X/Y 轴独立缩放（Ctrl 键修饰）。
+            *   通过 `SignalProxy` 监听鼠标移动，实现了多窗口十字光标同步。
 
 ## 关键技术细节 (Technical Notes)
-*   **缩放逻辑**: 通过覆盖 `ViewBox.wheelEvent` 实现了 `Wheel -> X Zoom` 和 `Ctrl + Wheel -> Y Zoom`。
-*   **绘图性能**: 指标线使用 `pg.PlotCurveItem` 原生绘制以避免与 Finplot 的 `datasrc` 管理冲突。K 线使用 `fplt.candlestick_ochl` 绘制并设置 `ZValue(10)` 确保置顶。
-*   **时区**: 数据在加载时从 UTC 转换为 `America/New_York`，在绘图前去除 tz-info 以兼容 Finplot 的坐标计算。
+*   **缩放逻辑**: `wheelEvent` 被劫持，直接调用 `scaleBy`，绕过了 PyqtGraph 的默认行为。
+*   **同步机制**: 利用 `pyqtSignal` 广播当前鼠标位置的时间戳，各子窗口接收信号后通过 `searchsorted` 快速定位并移动垂直线。
+*   **布局管理**: 动态重建布局容器实现布局切换。每次切换布局或加载数据后，强制调用 `reset_charts_view` 触发 AutoRange，确保 K 线可见。
 
-## 下一步 (Next Steps)
-1.  **十字光标同步**: 需要实现 `SignalProxy` 监听鼠标移动，并通过全局时间戳同步各窗口的 `InfiniteLine`。
-2.  **指标管理**: 目前指标是固化在代码里的，未来可考虑增加 UI 菜单动态增删指标。
+## 已知问题与待办 (Known Issues & Todo)
+*   **性能**: 在极大数据量下（如全量 M1），重绘可能略有卡顿，未来可考虑分段加载或降采样。
+*   **交互**: 已实现十字光标数值标签（价格与时间），支持随鼠标移动实时更新。
