@@ -93,7 +93,7 @@ class ChartWidget(QWidget):
 
         # 自定义滚轮逻辑
         def custom_wheel_event(ev, axis=None):
-            # 获取滚动增量
+            # 1. 获取滚动增量
             if hasattr(ev, 'angleDelta'):
                 delta = ev.angleDelta().y()
             else:
@@ -102,31 +102,42 @@ class ChartWidget(QWidget):
             if delta == 0:
                 return
                 
+            # 2. 计算缩放系数
             s = 0.85 ** (delta / 120.0)
             
             try:
-                # PyQt6 GraphicsScene 事件使用 scenePos()
+                # 3. 获取鼠标位置 (Scene坐标)
                 pos = ev.scenePos()
                 
-                # 判定区域
-                is_on_x = self.ax.getAxis('bottom').sceneBoundingRect().contains(pos)
-                is_on_y = self.ax.getAxis('right').sceneBoundingRect().contains(pos)
-                is_in_plot = self.ax.vb.sceneBoundingRect().contains(pos)
+                # 4. 判定鼠标所在区域
+                rect_x = self.ax.getAxis('bottom').sceneBoundingRect()
+                rect_y = self.ax.getAxis('right').sceneBoundingRect()
+                rect_plot = self.ax.vb.sceneBoundingRect()
                 
-                # 计算缩放中心 (数据坐标系)
+                # 5. 计算缩放中心 (数据坐标系)
+                # mapSceneToView 将屏幕(Scene)坐标映射为数据(View)坐标
+                # 必须确保这个 center 是准确的，scaleBy 才会以它为锚点
                 center = self.ax.vb.mapSceneToView(pos)
 
-                if is_on_x:
+                if rect_x.contains(pos):
                     # 鼠标在 X 轴区域：仅缩放 X 轴
+                    # 此时 center.x 是鼠标对应的 X 数据值，center.y 也是计算出的值
+                    # scaleBy(x=s, y=1) 会改变 X 范围，保持 Y 范围不变
+                    # center 参数确保了 center.x 在缩放后依然对应屏幕上的 pos.x
                     self.ax.vb.scaleBy(x=s, y=1, center=center)
-                elif is_on_y:
+                    
+                elif rect_y.contains(pos):
                     # 鼠标在 Y 轴区域：仅缩放 Y 轴
                     self.ax.vb.scaleBy(x=1, y=s, center=center)
-                elif is_in_plot:
+                    
+                elif rect_plot.contains(pos):
                     # 鼠标在图表区域：同时缩放 X 和 Y 轴
+                    # 双轴同时缩放，以鼠标位置为不动点
                     self.ax.vb.scaleBy(x=s, y=s, center=center)
+                    
                 else:
-                    # 其他情况
+                    # 其他区域 (如角落)
+                    # 默认行为：Ctrl 缩放 Y，否则缩放 X (保留传统操作习惯作为 fallback)
                     if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
                         self.ax.vb.scaleBy(x=1, y=s, center=center)
                     else:
