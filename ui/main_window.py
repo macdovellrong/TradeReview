@@ -14,6 +14,29 @@ class MockYScale:
         self.scalef = 1
         self.scaletype = 'linear'
 
+class TimeAxisItem(pg.AxisItem):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._dt_index = None
+
+    def set_datetime_index(self, dt_index):
+        self._dt_index = dt_index
+
+    def tickStrings(self, values, scale, spacing):
+        if self._dt_index is None or len(self._dt_index) == 0:
+            return [""] * len(values)
+
+        last_idx = len(self._dt_index) - 1
+        out = []
+        for x in values:
+            idx = int(round(x))
+            if idx < 0 or idx > last_idx:
+                out.append("")
+                continue
+            dt = self._dt_index[idx]
+            out.append(dt.strftime('%Y-%m-%d %H:%M'))
+        return out
+
 # 封装单个图表窗口
 class ChartWidget(QWidget):
     # 定义信号：鼠标移动时发射当前的时间戳 (float)
@@ -41,7 +64,8 @@ class ChartWidget(QWidget):
         self.glw = pg.GraphicsLayoutWidget()
         self.layout.addWidget(self.glw)
         
-        self.ax = self.glw.addPlot(axisItems={'bottom': pg.DateAxisItem()})
+        self.time_axis = TimeAxisItem(orientation='bottom')
+        self.ax = self.glw.addPlot(axisItems={'bottom': self.time_axis})
         self.ax.significant_decimals = 4 
         self.ax.significant_eps = 1e-4
         
@@ -69,22 +93,47 @@ class ChartWidget(QWidget):
 
         # 自定义滚轮逻辑
         def custom_wheel_event(ev, axis=None):
-            delta = ev.delta()
+            # 获取滚动增量
+            if hasattr(ev, 'angleDelta'):
+                delta = ev.angleDelta().y()
+            else:
+                delta = ev.delta()
+
             if delta == 0:
                 return
                 
             s = 0.85 ** (delta / 120.0)
             
             try:
-                pos = ev.scenePosition()
+                # PyQt6 GraphicsScene 事件使用 scenePos()
+                pos = ev.scenePos()
+                
+                # 判定区域
+                is_on_x = self.ax.getAxis('bottom').sceneBoundingRect().contains(pos)
+                is_on_y = self.ax.getAxis('right').sceneBoundingRect().contains(pos)
+                is_in_plot = self.ax.vb.sceneBoundingRect().contains(pos)
+                
+                # 计算缩放中心 (数据坐标系)
                 center = self.ax.vb.mapSceneToView(pos)
-            except:
-                center = None
 
-            if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
-                self.ax.vb.scaleBy(x=1, y=s, center=center)
-            else:
-                self.ax.vb.scaleBy(x=s, y=1, center=center)
+                if is_on_x:
+                    # 鼠标在 X 轴区域：仅缩放 X 轴
+                    self.ax.vb.scaleBy(x=s, y=1, center=center)
+                elif is_on_y:
+                    # 鼠标在 Y 轴区域：仅缩放 Y 轴
+                    self.ax.vb.scaleBy(x=1, y=s, center=center)
+                elif is_in_plot:
+                    # 鼠标在图表区域：同时缩放 X 和 Y 轴
+                    self.ax.vb.scaleBy(x=s, y=s, center=center)
+                else:
+                    # 其他情况
+                    if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                        self.ax.vb.scaleBy(x=1, y=s, center=center)
+                    else:
+                        self.ax.vb.scaleBy(x=s, y=1, center=center)
+            
+            except Exception as e:
+                print(f"Zoom interaction error: {e}")
             
             ev.accept()
         
@@ -104,6 +153,15 @@ class ChartWidget(QWidget):
         self.hLine = pg.InfiniteLine(angle=0, movable=False)
         self.hLine.setPen(pg.mkPen(color='#FFFFFF', style=Qt.PenStyle.DashLine, width=1))
         
+        # 标签 (Labels) - 改用 TextItem 以便精确定位
+        self.txt_price = pg.TextItem(text="", color='#FFFFFF', fill='#333333', anchor=(1, 1))
+        self.txt_price.setZValue(20) # 确保在最上层
+        self.ax.addItem(self.txt_price, ignoreBounds=True)
+
+        self.txt_time = pg.TextItem(text="", color='#FFFFFF', fill='#333333', anchor=(0.5, 1))
+        self.txt_time.setZValue(20)
+        self.ax.addItem(self.txt_time, ignoreBounds=True)
+        
         self.ax.addItem(self.vLine, ignoreBounds=True)
         self.ax.addItem(self.hLine, ignoreBounds=True)
         
@@ -113,6 +171,10 @@ class ChartWidget(QWidget):
         # 缩放交互
         self.ax.setMouseEnabled(x=True, y=True)
         self.ax.getAxis('right').enableAutoSIPrefix(False)
+        
+        # 增强网格可见性
+        self.ax.getAxis('bottom').setGrid(100) # 0-255
+        self.ax.getAxis('right').setGrid(100)
 
         # 还原黑色背景
         pg.setConfigOptions(foreground='#FFFFFF', background='#000000')
@@ -121,6 +183,9 @@ class ChartWidget(QWidget):
         self.current_period = "1min"
         self.plot_item = None 
         self.indicator_items = {} 
+        self.current_df = None
+        self.current_x = None
+        self.current_time_values = None
         self.combo_period.currentTextChanged.connect(self.on_period_change)
 
     def on_mouse_move(self, evt):
@@ -130,75 +195,57 @@ class ChartWidget(QWidget):
             
             # 1. 移动自己的水平线 (价格)
             self.hLine.setPos(mousePoint.y())
+            # 移动垂直线 (时间) - 恢复平滑跟随鼠标，不强制吸附
             self.vLine.setPos(mousePoint.x())
             
-            # 2. 发射信号，通知其他窗口同步垂直线 (时间)
-            timestamp = self.get_timestamp_from_x(mousePoint.x())
-            if timestamp is not None:
-                self.sig_mouse_moved.emit(timestamp)
+            # 获取当前视图范围
+            view_range = self.ax.vb.viewRange()
+            x_min, x_max = view_range[0]
+            y_min, y_max = view_range[1]
+            
+            # 更新价格标签
+            self.txt_price.setText(f"{mousePoint.y():.4f}")
+            self.txt_price.setPos(x_max, mousePoint.y())
+            self.txt_price.setAnchor((1, 0.5))
+            
+            # 2. 时间标签处理
+            if self.current_df is not None and self.current_x is not None and len(self.current_x) > 0:
+                idx = int(round(mousePoint.x()))
+                if idx <= 0:
+                    idx = 0
+                elif idx >= len(self.current_x):
+                    idx = len(self.current_x) - 1
+
+                dt = self.current_df.index[idx]
+                dt_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+                self.txt_time.setText(dt_str)
+                
+                # 位置跟随鼠标 (平滑)，而不是吸附到 idx
+                self.txt_time.setPos(mousePoint.x(), y_min)
+                self.txt_time.setAnchor((0.5, 1)) 
+                
+                # 发射信号
+                if self.current_time_values is not None:
+                    self.sig_mouse_moved.emit(float(self.current_time_values[idx]))
+            else:
+                self.txt_time.setText("")
 
     def get_timestamp_from_x(self, x_val):
         """将 X 轴坐标转换为时间戳"""
-        # 我们需要访问 datasrc (finplot 对象) 或者直接访问 self.plot_item (Finplot Item)
-        # self.ax.vb.datasrc 是我们手动 hack 的，可能不准。
-        # 最稳的是直接看我们 update_chart 时用的 df
-        # 所以我们需要把 df 存下来
-        if not hasattr(self, 'current_df') or self.current_df is None or self.current_df.empty:
+        if self.current_x is None or len(self.current_x) == 0:
             return None
-            
-        df = self.current_df
-        idx = int(round(x_val))
-        if 0 <= idx < len(df):
-            # df.index 在 update_chart 里被去除了 tz，但那是 copy。
-            # 我们应该在 update_chart 把处理后的 df 存到 self.current_df
-            return df.index[idx].timestamp()
-        return None
+        return float(x_val)
 
     def sync_vline(self, timestamp):
         """接收外部时间戳，移动垂直线"""
-        if not hasattr(self, 'current_df') or self.current_df is None or self.current_df.empty:
+        if self.current_time_values is None or len(self.current_time_values) == 0:
             return
-
-        df = self.current_df
         try:
-            # df.index 是 datetime (naive)，timestamp 是 UTC float
-            # 需要把 timestamp 转为 naive datetime (假设是本地时间? 不，我们在 DataEngine 转成了 NY 时间并去除了 tz)
-            # 关键：DataEngine 里的 index 是带时区的。
-            # update_chart 里我们 df.index = df.index.tz_localize(None)
-            # 所以这里的 df.index 是 naive 的 NY 时间。
-            
-            # 我们的 timestamp 是从 get_timestamp_from_x 来的
-            # 那个函数也是从 naive 的 NY 时间转出来的 timestamp()
-            # 所以反转回去应该也是 naive 的 local time (基于系统时区?)
-            # 不，timestamp() 是 UTC。
-            # datetime.fromtimestamp(ts) 返回的是本地时间。
-            # 这会导致时区错乱。
-            
-            # 正确做法：不要用 timestamp float 中转，直接传 string 或者 datetime 对象。
-            # 但 pyqtSignal 定义了 float。
-            # 那么接收端需要小心。
-            
-            # 如果我们只是在同台机器跑，fromtimestamp 会用系统时区。
-            # 而我们的 df.index 是 "America/New_York" 去掉 tzinfo 后的时间。
-            # 这两个“本地”可能不一样！
-            
-            # 简单粗暴：我们改用 datetime.utcfromtimestamp? 也不对。
-            
-            # 修正：get_timestamp_from_x 应该返回 naive datetime 的 timestamp?
-            # pd.Timestamp(naive).timestamp() 会假定它是本地时间。
-            
-            # 最佳方案：
-            # 在 update_chart 里，保留一个 index 到 timestamp 的映射表？
-            # 或者直接在 signal 里传 datetime 字符串 (ISO format)。
-            pass # 稍后在 MainWindow 修改信号类型
-            
-            # 暂时用简单的 searchsorted，假设时间戳一致
-            target_dt = datetime.datetime.fromtimestamp(timestamp)
-            idx = df.index.searchsorted(target_dt)
-            
-            if idx >= len(df):
-                idx = len(df) - 1
-            
+            idx = int(np.searchsorted(self.current_time_values, timestamp))
+            if idx <= 0:
+                idx = 0
+            elif idx >= len(self.current_time_values):
+                idx = len(self.current_time_values) - 1
             self.vLine.setPos(idx)
         except Exception:
             pass
@@ -216,6 +263,9 @@ class ChartWidget(QWidget):
             df.index = df.index.tz_localize(None)
         
         self.current_df = df # 保存引用
+        self.current_x = np.arange(len(df), dtype=np.float64)
+        self.current_time_values = np.asarray(df.index.view('int64'), dtype=np.float64)
+        self.time_axis.set_datetime_index(self.current_df.index)
 
         if self.plot_item is None:
             self.plot_item = fplt.candlestick_ochl(df[['open', 'close', 'high', 'low']], ax=self.ax)
@@ -231,11 +281,8 @@ class ChartWidget(QWidget):
             'EMA50': '#00FF00', 'EMA60': '#0000FF'
         }
         
-        # 准备 X 轴数据 (确保是 np.array)
-        if self.ax.vb.x_indexed:
-             x_data = np.arange(len(df))
-        else:
-             x_data = df.index.astype(np.int64) // 10**9 
+        # 准备 X 轴数据 (索引坐标)
+        x_data = self.current_x
              
         # 绘制 EMA
         for name, color in ema_colors.items():
@@ -343,6 +390,16 @@ class MainWindow(QWidget):
         self.btn_play.setEnabled(False)
         panel.addWidget(self.btn_play)
         
+        # 进度条 (Progress Slider)
+        self.slider_progress = QSlider(Qt.Orientation.Horizontal)
+        self.slider_progress.setRange(0, 100) # 初始范围
+        # 使用 sliderPressed/Released 来暂停/恢复播放，避免拖动时冲突
+        self.slider_progress.sliderPressed.connect(self.on_slider_pressed)
+        self.slider_progress.sliderReleased.connect(self.on_slider_released)
+        # 实时拖动更新
+        self.slider_progress.valueChanged.connect(self.on_progress_change)
+        panel.addWidget(self.slider_progress)
+        
         panel.addWidget(QLabel("Speed:"))
         self.slider_speed = QSlider(Qt.Orientation.Horizontal)
         self.slider_speed.setRange(1, 1000)
@@ -399,15 +456,44 @@ class MainWindow(QWidget):
         self.engine.parquet_file = file_path
         self.engine.load_data()
         if self.engine.df_ticks is not None:
-             if len(self.engine.df_ticks) > 100000:
+             total_ticks = len(self.engine.df_ticks)
+             self.slider_progress.blockSignals(True)
+             self.slider_progress.setRange(0, total_ticks - 1)
+             
+             if total_ticks > 100000:
                 self.current_time = self.engine.df_ticks.index[100000]
+                self.slider_progress.setValue(100000)
              else:
                 self.current_time = self.engine.df_ticks.index[0]
+                self.slider_progress.setValue(0)
+             self.slider_progress.blockSignals(False)
+             
              if hasattr(self, 'date_edit'):
                  self.date_edit.setDateTime(QDateTime(self.current_time.year, self.current_time.month, self.current_time.day,
                                                     self.current_time.hour, self.current_time.minute, self.current_time.second))
              # 强制重置视图，确保K线居中显示
              self.reset_charts_view()
+
+    def on_slider_pressed():
+        self.was_playing = self.is_playing
+        if self.is_playing:
+            self.toggle_play()
+
+    def on_slider_released():
+        if hasattr(self, 'was_playing') and self.was_playing:
+            self.toggle_play()
+
+    def on_progress_change(self, val):
+        if self.engine.df_ticks is not None and 0 <= val < len(self.engine.df_ticks):
+            self.current_time = self.engine.df_ticks.index[val]
+            
+            self.date_edit.blockSignals(True)
+            self.date_edit.setDateTime(QDateTime(self.current_time.year, self.current_time.month, self.current_time.day,
+                                               self.current_time.hour, self.current_time.minute, self.current_time.second))
+            self.date_edit.blockSignals(False)
+            
+            if not self.is_playing:
+                self.refresh_all_charts()
 
     def open_file_dialog(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Open Parquet Data", "", "Parquet Files (*.parquet);;All Files (*)")
@@ -448,7 +534,19 @@ class MainWindow(QWidget):
     def on_timer_tick(self):
         if not self.chk_replay.isChecked() or not self.is_playing:
             return
+        
         self.current_time += datetime.timedelta(seconds=self.replay_speed)
+        
+        # 反查 index 更新 slider
+        if self.engine.df_ticks is not None:
+            idx = self.engine.df_ticks.index.searchsorted(self.current_time)
+            if idx < len(self.engine.df_ticks):
+                self.slider_progress.blockSignals(True)
+                self.slider_progress.setValue(idx)
+                self.slider_progress.blockSignals(False)
+            else:
+                self.toggle_play()
+        
         self.date_edit.blockSignals(True)
         self.date_edit.setDateTime(QDateTime(self.current_time.year, self.current_time.month, self.current_time.day,
                                            self.current_time.hour, self.current_time.minute, self.current_time.second))
