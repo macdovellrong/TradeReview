@@ -18,9 +18,65 @@ class TimeAxisItem(pg.AxisItem):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._dt_index = None
+        self._delta = None
 
     def set_datetime_index(self, dt_index):
         self._dt_index = dt_index
+        if len(dt_index) > 1:
+            # 简单计算周期：取前两个点的差值 (假设数据是规整的)
+            # 或者取中间值的差值？为了性能先取头两个
+            self._delta = dt_index[1] - dt_index[0]
+        else:
+            self._delta = datetime.timedelta(minutes=1) # 默认
+
+    def tickValues(self, minVal, maxVal, size):
+        """
+        重写 tickValues，强制刻度步长为整数，确保刻度线对齐 K 线
+        """
+        # 1. 估算可视范围内的 K 线数量
+        visible_range = maxVal - minVal
+        if visible_range <= 0:
+            return []
+            
+        # 2. 目标刻度数量 (比如屏幕宽 1000px，每 100px 一个刻度 -> 10 个)
+        # size 是像素值
+        target_ticks = max(2, int(size / 100)) # 每 100 像素一个刻度
+        
+        # 3. 计算理想步长 (ideal step)
+        step = visible_range / target_ticks
+        
+        # 4. 规范化步长为整数 (1, 2, 5, 10, 20, 50, 100...)
+        # 至少为 1
+        if step < 1:
+            step = 1
+        else:
+            # 简单的步长吸附逻辑
+            power_of_10 = 10 ** int(np.log10(step))
+            rel_step = step / power_of_10
+            if rel_step < 1.5:
+                step = 1 * power_of_10
+            elif rel_step < 3.5:
+                step = 2 * power_of_10
+            elif rel_step < 7.5:
+                step = 5 * power_of_10
+            else:
+                step = 10 * power_of_10
+                
+        step = int(step)
+        
+        # 5. 生成刻度值
+        # 找到第一个大于 minVal 且是 step 倍数的整数
+        start = (int(minVal) // step) * step
+        if start < minVal:
+            start += step
+            
+        values = []
+        val = start
+        while val <= maxVal:
+            values.append(val)
+            val += step
+            
+        return [(step, values)]
 
     def tickStrings(self, values, scale, spacing):
         if self._dt_index is None or len(self._dt_index) == 0:
@@ -30,11 +86,20 @@ class TimeAxisItem(pg.AxisItem):
         out = []
         for x in values:
             idx = int(round(x))
-            if idx < 0 or idx > last_idx:
-                out.append("")
-                continue
-            dt = self._dt_index[idx]
-            out.append(dt.strftime('%Y-%m-%d %H:%M'))
+            
+            if 0 <= idx <= last_idx:
+                # 范围内：查表
+                dt = self._dt_index[idx]
+            elif idx > last_idx:
+                # 未来：基于最后一个点外推
+                diff = idx - last_idx
+                dt = self._dt_index[last_idx] + self._delta * diff
+            else: # idx < 0
+                # 过去：基于第一个点外推
+                diff = idx # 负数
+                dt = self._dt_index[0] + self._delta * diff
+            
+            out.append(dt.strftime('%m-%d %H:%M'))
         return out
 
 # 封装单个图表窗口
@@ -183,6 +248,9 @@ class ChartWidget(QWidget):
         self.ax.setMouseEnabled(x=True, y=True)
         self.ax.getAxis('right').enableAutoSIPrefix(False)
         
+        # 解除缩放和平移限制，允许无限拖动
+        self.ax.vb.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
+        
         # 增强网格可见性
         self.ax.getAxis('bottom').setGrid(100) # 0-255
         self.ax.getAxis('right').setGrid(100)
@@ -264,15 +332,25 @@ class ChartWidget(QWidget):
     def on_period_change(self, text):
         self.current_period = text
 
-    def update_chart(self, df):
+    def update_chart(self, df, auto_scale=False):
         if df is None or df.empty:
+            # print(f"Chart {self.lbl_name.text()}: df is empty or None")
             return
 
+        # Debug
+        # print(f"Chart {self.lbl_name.text()} update: len={len(df)}, period={self.current_period}")
+        
         # 保存原始 df 用于同步查询 (带时区? 不，存处理后的)
         if df.index.tz is not None:
             df = df.copy()
             df.index = df.index.tz_localize(None)
         
+        # 记录更新前的视图状态，用于智能跟随
+        last_len = len(self.current_x) if self.current_x is not None else 0
+        view_range = self.ax.vb.viewRange()
+        view_right = view_range[0][1]
+        is_following = (view_right >= last_len - 0.5) # 如果视图右边界在最后一条数据附近，则判定为跟随模式
+
         self.current_df = df # 保存引用
         self.current_x = np.arange(len(df), dtype=np.float64)
         self.current_time_values = np.asarray(df.index.view('int64'), dtype=np.float64)
@@ -320,12 +398,35 @@ class ChartWidget(QWidget):
                 else:
                     self.indicator_items[name].setData(x=x_data, y=y_data)
 
+        # 强制解除限制 (防止 Finplot 内部重置)
+        self.ax.vb.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
+
         if len(df) > 0:
             y_min = df['low'].min()
             y_max = df['high'].max()
             y_pad = (y_max - y_min) * 0.05
-            self.ax.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
-            self.ax.setXRange(0, len(df), padding=0.02)
+            
+            # 右侧预留空隙 (根数)
+            right_padding = 5 
+            
+            if auto_scale:
+                # 强制重置视图
+                self.ax.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
+                # 预留 5 根 K 线的空间
+                self.ax.setXRange(0, len(df) + right_padding, padding=0.02)
+            elif is_following and len(df) > last_len:
+                # 智能跟随：仅在数据增加时才自动平移
+                # 如果数据没变（比如还在同一根K线时间内），不要动视图，允许用户自由缩放
+                view_len = view_range[0][1] - view_range[0][0]
+                
+                # 新的右边界 = 数据长度 + 预留空间
+                new_right = len(df) + right_padding
+                new_left = new_right - view_len
+                
+                self.ax.setXRange(new_left, new_right, padding=0)
+                # Y轴可以自适应，但如果用户正在操作Y轴呢？
+                # 为了安全，这里也只在数据增加时更新Y轴
+                self.ax.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
             
         if hasattr(self, '_custom_wheel_event'):
             self.ax.vb.wheelEvent = self._custom_wheel_event
@@ -364,7 +465,7 @@ class MainWindow(QWidget):
         for name, period in configs:
             chart = ChartWidget(name)
             chart.combo_period.setCurrentText(period)
-            chart.combo_period.currentTextChanged.connect(lambda _, c=chart: self.refresh_single_chart(c))
+            chart.combo_period.currentTextChanged.connect(lambda _, c=chart: self.refresh_single_chart(c, auto_scale=True))
             # 连接光标同步信号
             chart.sig_mouse_moved.connect(self.sync_all_charts)
             self.charts.append(chart)
@@ -504,7 +605,7 @@ class MainWindow(QWidget):
             self.date_edit.blockSignals(False)
             
             if not self.is_playing:
-                self.refresh_all_charts()
+                self.refresh_all_charts(auto_scale=False)
 
     def open_file_dialog(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Open Parquet Data", "", "Parquet Files (*.parquet);;All Files (*)")
@@ -514,7 +615,7 @@ class MainWindow(QWidget):
     def on_mode_change(self, state):
         is_replay = self.chk_replay.isChecked()
         self.btn_play.setEnabled(is_replay)
-        self.refresh_all_charts()
+        self.refresh_all_charts(auto_scale=True)
 
     def toggle_play(self):
         self.is_playing = not self.is_playing
@@ -525,22 +626,22 @@ class MainWindow(QWidget):
         self.lbl_speed_val.setText(f"{val}x")
 
     def reset_charts_view(self):
-        self.refresh_all_charts()
+        self.refresh_all_charts(auto_scale=True)
         for chart in self.charts:
             chart.ax.autoRange()
 
-    def refresh_single_chart(self, chart):
+    def refresh_single_chart(self, chart, auto_scale=False):
         if self.engine.df_ticks is None:
             return
         if self.chk_replay.isChecked():
             df = self.engine.get_candles_by_time(chart.current_period, self.current_time, count=300)
         else:
             df = self.engine.get_candles(chart.current_period) 
-        chart.update_chart(df)
+        chart.update_chart(df, auto_scale=auto_scale)
 
-    def refresh_all_charts(self):
+    def refresh_all_charts(self, auto_scale=False):
         for chart in self.charts:
-            self.refresh_single_chart(chart)
+            self.refresh_single_chart(chart, auto_scale=auto_scale)
 
     def on_timer_tick(self):
         if not self.chk_replay.isChecked() or not self.is_playing:
