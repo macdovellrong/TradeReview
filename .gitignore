@@ -4,5 +4,6 @@ __pycache__/
 .ipynb_checkpoints/
 *.parquet
 *.log
+*.png
 .vscode/
 data/
