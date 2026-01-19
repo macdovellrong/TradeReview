@@ -1030,6 +1030,11 @@ class MainWindow(QWidget):
         self.switch_layout(self.combo_layout.currentText())
 
     def switch_layout(self, layout_name):
+        active_charts = [c for c in self.charts if not c.is_detached]
+        for chart in active_charts:
+            if chart.parent() is not None:
+                chart.setParent(None)
+
         while self.chart_container_layout.count():
             item = self.chart_container_layout.takeAt(0)
             widget = item.widget()
@@ -1038,12 +1043,11 @@ class MainWindow(QWidget):
         
         self.tabs = None
         
-        active_charts = [c for c in self.charts if not c.is_detached]
-        
         if layout_name == "Vertical":
             splitter = QSplitter(Qt.Orientation.Vertical)
             for chart in active_charts:
                 splitter.addWidget(chart)
+                chart.show()
             self.chart_container_layout.addWidget(splitter)
             
         elif layout_name == "Grid 2x2":
@@ -1056,6 +1060,7 @@ class MainWindow(QWidget):
                 row = i // 2
                 col = i % 2
                 grid.addWidget(chart, row, col)
+                chart.show()
             
             self.chart_container_layout.addWidget(grid_widget)
             
@@ -1065,6 +1070,7 @@ class MainWindow(QWidget):
                 # 获取当前显示的周期名作为标题
                 title = chart.display_map.get(chart.current_period, chart.current_period)
                 self.tabs.addTab(chart, title)
+                chart.show()
             self.chart_container_layout.addWidget(self.tabs)
             
         # 切换布局后强制重置视图
