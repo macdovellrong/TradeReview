@@ -1073,8 +1073,7 @@ class MainWindow(QWidget):
                 chart.show()
             self.chart_container_layout.addWidget(self.tabs)
             
-        # 切换布局后强制重置视图
-        self.reset_charts_view()
+        # 切换布局仅重排容器，不强制重采样/重置视图
 
     def load_data_file(self, file_path):
         self.engine.parquet_file = file_path
