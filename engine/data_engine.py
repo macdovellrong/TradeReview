@@ -5,6 +5,8 @@ class DataEngine:
     def __init__(self, parquet_file="data/ticks.parquet"):
         self.parquet_file = parquet_file
         self.df_ticks = None
+        self.calendar_name = "CME_FX"
+        self._calendar = None
         self.load_data()
 
     def load_data(self):
@@ -67,6 +69,7 @@ class DataEngine:
             full_index = self._build_full_index(
                 naive_index[0], naive_index[-1], timeframe, origin_ts
             )
+            full_index = self._filter_index_by_calendar(full_index, timeframe)
             df_candles = df_candles.reindex(full_index)
 
         
@@ -121,6 +124,7 @@ class DataEngine:
             full_index = self._build_full_index(
                 naive_index[0], naive_index[-1], timeframe, origin_ts
             )
+            full_index = self._filter_index_by_calendar(full_index, timeframe)
             df_candles = df_candles.reindex(full_index)
         if self._should_dropna(timeframe):
             df_candles.dropna(inplace=True)
@@ -161,7 +165,7 @@ class DataEngine:
                 hours = int(tf[:-1])
             except ValueError:
                 return True
-            return hours <= 1
+            return True
         return False
 
 
@@ -177,6 +181,72 @@ class DataEngine:
         else:
             start = base[pos]
         return pd.date_range(start=start, end=end_ts, freq=timeframe)
+
+    def _get_calendar(self):
+        if self._calendar is not None:
+            return self._calendar
+        try:
+            import pandas_market_calendars as mcal
+        except Exception:
+            self._calendar = None
+            return None
+        for name in [self.calendar_name, "CME_FX", "CME"]:
+            if not name:
+                continue
+            try:
+                self._calendar = mcal.get_calendar(name)
+                return self._calendar
+            except Exception:
+                continue
+        self._calendar = None
+        return None
+
+    def _filter_index_by_calendar(self, full_index, timeframe):
+        if full_index is None or full_index.empty:
+            return full_index
+
+        cal = self._get_calendar()
+        if cal is None:
+            return full_index
+
+        try:
+            offset = pd.tseries.frequencies.to_offset(timeframe)
+            freq_delta = offset.delta
+        except Exception:
+            return full_index
+        if freq_delta is None:
+            return full_index
+
+        # Build schedule slightly wider than the data range.
+        start_date = (full_index[0] - pd.Timedelta(days=2)).date()
+        end_date = (full_index[-1] + pd.Timedelta(days=2)).date()
+        try:
+            schedule = cal.schedule(start_date=start_date, end_date=end_date)
+        except Exception:
+            return full_index
+        if schedule is None or schedule.empty:
+            return full_index
+
+        try:
+            schedule = schedule.tz_convert("America/New_York")
+        except Exception:
+            # If schedule is naive, assume NY wall time.
+            schedule = schedule.tz_localize("America/New_York")
+
+        opens = schedule["market_open"].dt.tz_localize(None)
+        closes = schedule["market_close"].dt.tz_localize(None)
+
+        mask = np.zeros(len(full_index), dtype=bool)
+        for open_ts, close_ts in zip(opens, closes):
+            # Keep bars whose interval overlaps the trading session.
+            start = open_ts - freq_delta
+            end = close_ts
+            left = full_index.searchsorted(start, side="left")
+            right = full_index.searchsorted(end, side="left")
+            if right > left:
+                mask[left:right] = True
+
+        return full_index[mask]
 
 if __name__ == "__main__":
     pass
