@@ -13,13 +13,16 @@ class DataEngine:
         try:
             self.df_ticks = pd.read_parquet(self.parquet_file)
             
-            # 1. 时区转换: UTC -> America/New_York
-            # 假设 Parquet 里的时间是 UTC (Naive -> UTC -> NY)
-            # 如果已经是 UTC aware (有+00:00), 这一步可能要微调
+            # 1. 时区处理
+            # 用户反馈数据源(QDM)已导出为美东时间 (America/New_York)
+            # 如果是 Naive Time，直接视为美东时间，不再假设为 UTC
             if self.df_ticks.index.tz is None:
-                self.df_ticks.index = self.df_ticks.index.tz_localize('UTC')
+                self.df_ticks.index = self.df_ticks.index.tz_localize('America/New_York')
+            else:
+                # 如果自带时区，则转换为美东时间 (以防万一)
+                self.df_ticks.index = self.df_ticks.index.tz_convert('America/New_York')
             
-            self.df_ticks.index = self.df_ticks.index.tz_convert('America/New_York')
+            self.df_ticks.sort_index(inplace=True)
             
             print(f"Loaded {len(self.df_ticks)} ticks. Time range: {self.df_ticks.index[0]} - {self.df_ticks.index[-1]}")
             
@@ -29,23 +32,53 @@ class DataEngine:
     def get_candles(self, timeframe='1min'):
         """
         将 Tick 数据重采样为 OHLCV K线数据 (全量)
+        支持纽约时间切分 (NY Close at 17:00)
         """
         if self.df_ticks is None:
             return None
 
+        # 规范化周期格式
+        # Pandas 新版本推荐使用 'h' 而不是 'H'，这里不再强制大写
+
         print(f"Resampling to {timeframe}...")
         
-        # 1. 价格 OHLC
-        ohlc = self.df_ticks['price'].resample(timeframe).ohlc()
+        # 为了实现 "NY Close" (17:00 对齐) 且不受夏令时漂移影响，
+        # 我们需要先转换为 Naive Time (墙上时间) 再 Resample
+        # 创建临时 Series 以避免复制整个 DataFrame
+        naive_index = self.df_ticks.index.tz_localize(None)
+        
+        price_series = pd.Series(self.df_ticks['price'].values, index=naive_index)
+        vol_series = pd.Series(
+            self.df_ticks['volume'].values, index=naive_index, name="volume"
+        )
+        
+        # 设置锚点为 17:00
+        origin_ts = pd.Timestamp("2000-01-01 17:00:00")
+        
+        # 1. 价格 OHLC (明确左闭左标)
+        ohlc = price_series.resample(timeframe, closed='left', label='left', origin=origin_ts).ohlc()
         
         # 2. 成交量 Sum
-        vol = self.df_ticks['volume'].resample(timeframe).sum()
+        vol = vol_series.resample(timeframe, closed='left', label='left', origin=origin_ts).sum()
         
         # 3. 合并
         df_candles = pd.concat([ohlc, vol], axis=1)
+        if not self._should_dropna(timeframe):
+            full_index = self._build_full_index(
+                naive_index[0], naive_index[-1], timeframe, origin_ts
+            )
+            df_candles = df_candles.reindex(full_index)
+
         
         # 4. 清洗
-        df_candles.dropna(inplace=True)
+        if self._should_dropna(timeframe):
+            df_candles.dropna(inplace=True)
+
+        # 调试：打印前 5 行 K 线 (清洗后)
+        print(f"First 5 candles ({timeframe}):")
+        print(df_candles.head())
+        
+        # 5. 计算指标
         
         # 5. 计算指标
         df_candles = self._calculate_indicators(df_candles)
@@ -71,10 +104,26 @@ class DataEngine:
         if len(recent_ticks) == 0:
             return None
 
+        # 转换 Naive Time 用于对齐
+        naive_index = recent_ticks.index.tz_localize(None)
+        price_series = pd.Series(recent_ticks['price'].values, index=naive_index)
+        vol_series = pd.Series(
+            recent_ticks['volume'].values, index=naive_index, name="volume"
+        )
+        
+        origin_ts = pd.Timestamp("2000-01-01 17:00:00")
+
         # 2. 合成 K 线
-        ohlc = recent_ticks['price'].resample(timeframe).ohlc()
-        vol = recent_ticks['volume'].resample(timeframe).sum()
-        df_candles = pd.concat([ohlc, vol], axis=1).dropna()
+        ohlc = price_series.resample(timeframe, closed='left', label='left', origin=origin_ts).ohlc()
+        vol = vol_series.resample(timeframe, closed='left', label='left', origin=origin_ts).sum()
+        df_candles = pd.concat([ohlc, vol], axis=1)
+        if not self._should_dropna(timeframe):
+            full_index = self._build_full_index(
+                naive_index[0], naive_index[-1], timeframe, origin_ts
+            )
+            df_candles = df_candles.reindex(full_index)
+        if self._should_dropna(timeframe):
+            df_candles.dropna(inplace=True)
         
         # 3. 计算指标 (在切片前计算，保证数值准确)
         df_candles = self._calculate_indicators(df_candles)
@@ -97,6 +146,37 @@ class DataEngine:
         # df['BB_Mid'] = sma20 # 如果需要画中轨
         
         return df
+
+
+    def _should_dropna(self, timeframe):
+        tf = str(timeframe).strip().lower()
+        if tf.endswith("min"):
+            try:
+                minutes = int(tf[:-3])
+            except ValueError:
+                return True
+            return minutes <= 60
+        if tf.endswith("h"):
+            try:
+                hours = int(tf[:-1])
+            except ValueError:
+                return True
+            return hours <= 1
+        return False
+
+
+    def _build_full_index(self, start_ts, end_ts, timeframe, origin_ts):
+        if start_ts > end_ts:
+            return pd.DatetimeIndex([])
+        base = pd.date_range(start=origin_ts, end=end_ts, freq=timeframe)
+        if base.empty:
+            return base
+        pos = base.searchsorted(start_ts, side="right") - 1
+        if pos < 0:
+            start = base[0]
+        else:
+            start = base[pos]
+        return pd.date_range(start=start, end=end_ts, freq=timeframe)
 
 if __name__ == "__main__":
     pass
