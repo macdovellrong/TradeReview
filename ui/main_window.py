@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PyQt6.QtGui import QAction, QPainter, QPicture
 from PyQt6.QtCore import Qt, QTimer, QDateTime, pyqtSignal, QSize
 from engine.data_engine import DataEngine
+from engine.replay_engine import ReplayEngine
 import datetime
 import os
 
@@ -792,6 +793,7 @@ class MainWindow(QWidget):
         self.resize(1400, 950)
         
         self.engine = DataEngine(parquet_file=None) 
+        self.replay_engine = ReplayEngine(self.engine)
         self.current_time = datetime.datetime.now()
         self.is_playing = False
         self.replay_speed = 60 
@@ -839,6 +841,15 @@ class MainWindow(QWidget):
         self.date_edit.setDateTime(QDateTime(dt.year, dt.month, dt.day,
                                             dt.hour, dt.minute, dt.second))
 
+    def _get_replay_periods(self):
+        return [chart.current_period for chart in self.charts]
+
+    def _ensure_replay_engine(self):
+        if self.engine.df_ticks is None:
+            return
+        if not self.replay_engine.states:
+            self.replay_engine.initialize(self._get_replay_periods(), self.current_time)
+
     def init_charts(self):
         # 初始只创建4个，默认给不同周期
         configs = [("1h", "1h"), ("15min", "15min"), ("5min", "5min"), ("1min", "1min")]
@@ -874,6 +885,8 @@ class MainWindow(QWidget):
             
         # 更新内部时间
         self.current_time = self._normalize_time(target_dt)
+        if self.replay_engine is not None:
+            self.replay_engine.reset(self.current_time)
         
         # 更新进度条
         idx = self.engine.df_ticks.index.searchsorted(self.current_time)
@@ -914,6 +927,9 @@ class MainWindow(QWidget):
             chart.ax.setXRange(new_min, new_max, padding=0)
 
     def on_chart_period_changed(self, chart, period_display):
+        if self.chk_replay.isChecked() and self.engine.df_ticks is not None:
+            self.replay_engine.initialize(self._get_replay_periods(), self.current_time)
+
         # 1. 刷新数据
         self.refresh_single_chart(chart, auto_scale=True)
         
@@ -1095,6 +1111,8 @@ class MainWindow(QWidget):
                 self._set_date_edit(self.current_time)
             # 强制重置视图，确保K线居中显示
             self.reset_charts_view()
+            if hasattr(self, 'replay_engine'):
+                self.replay_engine.initialize(self._get_replay_periods(), self.current_time)
 
     def on_slider_pressed(self):
         self.was_playing = self.is_playing
@@ -1108,10 +1126,12 @@ class MainWindow(QWidget):
     def on_progress_change(self, val):
         if self.engine.df_ticks is not None and 0 <= val < len(self.engine.df_ticks):
             self.current_time = self.engine.df_ticks.index[val]
-            
+
             self.date_edit.blockSignals(True)
             self._set_date_edit(self.current_time)
             self.date_edit.blockSignals(False)
+            if self.chk_replay.isChecked():
+                self.replay_engine.reset(self.current_time)
             
             if not self.is_playing:
                 self.refresh_all_charts(auto_scale=False)
@@ -1124,6 +1144,8 @@ class MainWindow(QWidget):
     def on_mode_change(self, state):
         is_replay = self.chk_replay.isChecked()
         self.btn_play.setEnabled(is_replay)
+        if is_replay:
+            self._ensure_replay_engine()
         self.refresh_all_charts(auto_scale=True)
 
     def toggle_play(self):
@@ -1142,9 +1164,10 @@ class MainWindow(QWidget):
         
         target_idx = None
         if self.chk_replay.isChecked():
-            end_time = self._normalize_time(self.current_time)
-            df = self.engine.get_candles_by_time(chart.current_period, end_time, count=300)
-            target_idx = len(df) - 1
+            self._ensure_replay_engine()
+            df = self.replay_engine.get_view(chart.current_period, count=300, with_indicators=True)
+            if df is not None:
+                target_idx = len(df) - 1
         else:
             df = self.engine.get_candles(chart.current_period) 
             # 全量模式下，根据当前时间找到对应的 index
@@ -1167,18 +1190,22 @@ class MainWindow(QWidget):
             return
         
         current_ts = self._normalize_time(self.current_time)
-        self.current_time = current_ts + pd.Timedelta(seconds=self.replay_speed)
-        
-        # 反查 index 更新 slider
+        target_time = current_ts + pd.Timedelta(seconds=self.replay_speed)
+
+        self._ensure_replay_engine()
+        actual_time = self.replay_engine.advance_to(target_time)
+        if actual_time is None:
+            return
+        self.current_time = actual_time
+
         if self.engine.df_ticks is not None:
-            idx = self.engine.df_ticks.index.searchsorted(self.current_time)
-            if idx < len(self.engine.df_ticks):
-                self.slider_progress.blockSignals(True)
-                self.slider_progress.setValue(idx)
-                self.slider_progress.blockSignals(False)
-            else:
+            idx = min(self.replay_engine.tick_pos, len(self.engine.df_ticks) - 1)
+            if idx >= len(self.engine.df_ticks) - 1:
                 self.toggle_play()
-        
+            self.slider_progress.blockSignals(True)
+            self.slider_progress.setValue(idx)
+            self.slider_progress.blockSignals(False)
+
         self.date_edit.blockSignals(True)
         self._set_date_edit(self.current_time)
         self.date_edit.blockSignals(False)

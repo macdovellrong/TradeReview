@@ -7,6 +7,7 @@ class DataEngine:
         self.df_ticks = None
         self.calendar_name = "CME_FX"
         self._calendar = None
+        self._candles_cache = {}
         self.load_data()
 
     def load_data(self):
@@ -25,6 +26,7 @@ class DataEngine:
                 self.df_ticks.index = self.df_ticks.index.tz_convert('America/New_York')
             
             self.df_ticks.sort_index(inplace=True)
+            self._candles_cache.clear()
             
             print(f"Loaded {len(self.df_ticks)} ticks. Time range: {self.df_ticks.index[0]} - {self.df_ticks.index[-1]}")
             
@@ -38,6 +40,8 @@ class DataEngine:
         """
         if self.df_ticks is None:
             return None
+        if timeframe in self._candles_cache:
+            return self._candles_cache[timeframe]
 
         # 规范化周期格式
         # Pandas 新版本推荐使用 'h' 而不是 'H'，这里不再强制大写
@@ -86,6 +90,7 @@ class DataEngine:
         # 5. 计算指标
         df_candles = self._calculate_indicators(df_candles)
         
+        self._candles_cache[timeframe] = df_candles
         return df_candles
 
     def get_candles_by_time(self, timeframe, end_time, count=200):
@@ -95,6 +100,28 @@ class DataEngine:
         """
         if self.df_ticks is None:
             return None
+
+        if timeframe in self._candles_cache:
+            df_full = self._candles_cache[timeframe]
+            if df_full is None or df_full.empty:
+                return None
+            end_ts = pd.Timestamp(end_time)
+            if end_ts.tzinfo is not None:
+                end_ts = end_ts.tz_localize(None)
+            df_slice = df_full.loc[:end_ts]
+            if df_slice.empty:
+                return None
+            return df_slice.tail(count)
+        # Build once for replay if not cached.
+        df_full = self.get_candles(timeframe)
+        if df_full is not None and not df_full.empty:
+            end_ts = pd.Timestamp(end_time)
+            if end_ts.tzinfo is not None:
+                end_ts = end_ts.tz_localize(None)
+            df_slice = df_full.loc[:end_ts]
+            if df_slice.empty:
+                return None
+            return df_slice.tail(count)
             
         # 1. 截取到当前回放时间点的数据
         mask = self.df_ticks.index <= end_time
