@@ -815,6 +815,30 @@ class MainWindow(QWidget):
         self.timer.timeout.connect(self.on_timer_tick)
         self.timer.start(100) 
 
+    def _get_ticks_tz(self):
+        if self.engine.df_ticks is None:
+            return None
+        return self.engine.df_ticks.index.tz
+
+    def _normalize_time(self, dt):
+        tz = self._get_ticks_tz()
+        if tz is None:
+            return pd.Timestamp(dt).tz_localize(None)
+        ts = pd.Timestamp(dt)
+        if ts.tzinfo is None:
+            return ts.tz_localize(tz)
+        return ts.tz_convert(tz)
+
+    def _set_date_edit(self, dt):
+        if dt is None:
+            return
+        if isinstance(dt, pd.Timestamp):
+            dt = dt.to_pydatetime()
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
+        self.date_edit.setDateTime(QDateTime(dt.year, dt.month, dt.day,
+                                            dt.hour, dt.minute, dt.second))
+
     def init_charts(self):
         # 初始只创建4个，默认给不同周期
         configs = [("1h", "1h"), ("15min", "15min"), ("5min", "5min"), ("1min", "1min")]
@@ -849,10 +873,10 @@ class MainWindow(QWidget):
             self.chk_replay.setChecked(True)
             
         # 更新内部时间
-        self.current_time = target_dt
+        self.current_time = self._normalize_time(target_dt)
         
         # 更新进度条
-        idx = self.engine.df_ticks.index.searchsorted(target_dt)
+        idx = self.engine.df_ticks.index.searchsorted(self.current_time)
         if idx < len(self.engine.df_ticks):
             self.slider_progress.blockSignals(True)
             self.slider_progress.setValue(idx)
@@ -860,8 +884,7 @@ class MainWindow(QWidget):
         
         # 更新时间显示框
         self.date_edit.blockSignals(True)
-        self.date_edit.setDateTime(QDateTime(self.current_time.year, self.current_time.month, self.current_time.day,
-                                            self.current_time.hour, self.current_time.minute, self.current_time.second))
+        self._set_date_edit(self.current_time)
         self.date_edit.blockSignals(False)
         
         # 强制刷新图表
@@ -878,7 +901,7 @@ class MainWindow(QWidget):
             # 如果 target_dt 超出范围，需要特殊处理吗？ searchsorted 会返回 0 或 len
             
             # 为了更精确，使用 index 的 searchsorted
-            idx = chart.full_df.index.searchsorted(target_dt)
+            idx = self.engine.df_ticks.index.searchsorted(self.current_time)
             
             # 2. 获取当前视图跨度 (保持缩放比例不变)
             view_range = chart.ax.vb.viewRange()[0]
@@ -966,8 +989,7 @@ class MainWindow(QWidget):
 
         self.date_edit = QDateTimeEdit()
         self.date_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
-        self.date_edit.setDateTime(QDateTime(self.current_time.year, self.current_time.month, self.current_time.day,
-                                           self.current_time.hour, self.current_time.minute, self.current_time.second))
+        self._set_date_edit(self.current_time)
         panel.addWidget(self.date_edit)
         
         panel.addStretch()
@@ -1052,23 +1074,22 @@ class MainWindow(QWidget):
         self.engine.parquet_file = file_path
         self.engine.load_data()
         if self.engine.df_ticks is not None:
-             total_ticks = len(self.engine.df_ticks)
-             self.slider_progress.blockSignals(True)
-             self.slider_progress.setRange(0, total_ticks - 1)
-             
-             if total_ticks > 100000:
+            total_ticks = len(self.engine.df_ticks)
+            self.slider_progress.blockSignals(True)
+            self.slider_progress.setRange(0, total_ticks - 1)
+
+            if total_ticks > 100000:
                 self.current_time = self.engine.df_ticks.index[100000]
                 self.slider_progress.setValue(100000)
-             else:
+            else:
                 self.current_time = self.engine.df_ticks.index[0]
                 self.slider_progress.setValue(0)
-             self.slider_progress.blockSignals(False)
-             
-             if hasattr(self, 'date_edit'):
-                 self.date_edit.setDateTime(QDateTime(self.current_time.year, self.current_time.month, self.current_time.day,
-                                                    self.current_time.hour, self.current_time.minute, self.current_time.second))
-             # 强制重置视图，确保K线居中显示
-             self.reset_charts_view()
+            self.slider_progress.blockSignals(False)
+
+            if hasattr(self, 'date_edit'):
+                self._set_date_edit(self.current_time)
+            # 强制重置视图，确保K线居中显示
+            self.reset_charts_view()
 
     def on_slider_pressed(self):
         self.was_playing = self.is_playing
@@ -1084,8 +1105,7 @@ class MainWindow(QWidget):
             self.current_time = self.engine.df_ticks.index[val]
             
             self.date_edit.blockSignals(True)
-            self.date_edit.setDateTime(QDateTime(self.current_time.year, self.current_time.month, self.current_time.day,
-                                               self.current_time.hour, self.current_time.minute, self.current_time.second))
+            self._set_date_edit(self.current_time)
             self.date_edit.blockSignals(False)
             
             if not self.is_playing:
@@ -1117,7 +1137,8 @@ class MainWindow(QWidget):
         
         target_idx = None
         if self.chk_replay.isChecked():
-            df = self.engine.get_candles_by_time(chart.current_period, self.current_time, count=300)
+            end_time = self._normalize_time(self.current_time)
+            df = self.engine.get_candles_by_time(chart.current_period, end_time, count=300)
             target_idx = len(df) - 1
         else:
             df = self.engine.get_candles(chart.current_period) 
@@ -1140,7 +1161,8 @@ class MainWindow(QWidget):
         if not self.chk_replay.isChecked() or not self.is_playing:
             return
         
-        self.current_time += datetime.timedelta(seconds=self.replay_speed)
+        current_ts = self._normalize_time(self.current_time)
+        self.current_time = current_ts + pd.Timedelta(seconds=self.replay_speed)
         
         # 反查 index 更新 slider
         if self.engine.df_ticks is not None:
@@ -1153,7 +1175,6 @@ class MainWindow(QWidget):
                 self.toggle_play()
         
         self.date_edit.blockSignals(True)
-        self.date_edit.setDateTime(QDateTime(self.current_time.year, self.current_time.month, self.current_time.day,
-                                           self.current_time.hour, self.current_time.minute, self.current_time.second))
+        self._set_date_edit(self.current_time)
         self.date_edit.blockSignals(False)
         self.refresh_all_charts()
