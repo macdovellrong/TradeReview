@@ -749,7 +749,7 @@ class ChartWidget(QWidget):
         self.current_time_values = np.asarray(df.index.view('int64'), dtype=np.float64)
         
         # 调试：UI 层收到的数据检查
-        print(f"UI update_chart received {len(df)} rows. First 3: {df.index[:3].tolist()}")
+        # print(f"UI update_chart received {len(df)} rows. First 3: {df.index[:3].tolist()}")
         
         self.time_axis.set_datetime_index(df.index)
 
@@ -990,7 +990,11 @@ class MainWindow(QWidget):
         # 更新内部时间
         self.current_time = self._normalize_time(target_dt)
         if self.replay_engine is not None:
-            self.replay_engine.reset(self.current_time)
+            self.replay_engine.initialize(
+                self._get_replay_periods(),
+                self.current_time,
+                max_count_map=self._get_replay_max_count_map(),
+            )
         
         # 更新时间显示框
         self.date_edit.blockSignals(True)
