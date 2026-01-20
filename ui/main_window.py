@@ -149,6 +149,8 @@ class CandlestickItem(pg.GraphicsObject):
 class ChartWidget(QWidget):
     # 定义信号：鼠标移动时发射当前的时间戳 (float)
     sig_mouse_moved = pyqtSignal(float)
+    # 定义信号：鼠标移动时发射时间戳与价格
+    sig_mouse_moved_with_price = pyqtSignal(float, float)
     # 信号：周期改变时发射 (str)
     sig_period_changed = pyqtSignal(str)
     # 信号：请求分离/还原
@@ -546,7 +548,9 @@ class ChartWidget(QWidget):
                 
                 # 发射信号 (如果是未来时间，也发射时间戳，以便其他窗口同步)
                 # 使用 dt.value (纳秒) 转为秒，避免 naive datetime 的 timestamp() 时区问题
-                self.sig_mouse_moved.emit(dt.value / 1e9)
+                ts_seconds = dt.value / 1e9
+                self.sig_mouse_moved.emit(ts_seconds)
+                self.sig_mouse_moved_with_price.emit(ts_seconds, mousePoint.y())
             else:
                 self.txt_time.setText("")
 
@@ -655,6 +659,10 @@ class ChartWidget(QWidget):
                         diff = (ts_ns - first_ts) / delta_ns
                         idx = diff # 负数
                     self.vLine.setPos(idx)
+
+    def sync_crosshair(self, timestamp, price):
+        self.sync_vline(timestamp)
+        self.hLine.setPos(price)
 
     def on_btn_period_clicked(self, btn):
         period = btn.property("period")
@@ -934,7 +942,7 @@ class MainWindow(QWidget):
             chart.sig_set_replay_start.connect(self.set_replay_start_time)
             
             # 连接光标同步信号
-            chart.sig_mouse_moved.connect(self.sync_all_charts)
+            chart.sig_mouse_moved_with_price.connect(self.sync_all_charts_crosshair)
             self.charts.append(chart)
 
     def set_replay_start_time(self, target_dt):
@@ -1003,6 +1011,10 @@ class MainWindow(QWidget):
         """同步所有图表的垂直光标"""
         for chart in self.charts:
             chart.sync_vline(timestamp)
+
+    def sync_all_charts_crosshair(self, timestamp, price):
+        for chart in self.charts:
+            chart.sync_crosshair(timestamp, price)
 
     def create_control_panel(self):
         panel = QHBoxLayout()
