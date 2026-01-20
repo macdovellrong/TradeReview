@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QScrollArea, QButtonGroup)
+                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QScrollArea, QButtonGroup, QApplication)
 from PyQt6.QtGui import QAction, QPainter, QPicture
 from PyQt6.QtCore import Qt, QTimer, QDateTime, pyqtSignal, QSize
 from engine.data_engine import DataEngine
@@ -311,17 +311,16 @@ class ChartWidget(QWidget):
                 # 5. 计算缩放中心 (数据坐标系 - 必须使用实际价格/时间值)
                 center = self.ax.vb.mapSceneToView(pos)
 
-                if rect_x.contains(pos):
+                if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                    self.ax.vb.scaleBy(x=1, y=s_y, center=center)
+                elif rect_x.contains(pos):
                     self.ax.vb.scaleBy(x=s_x, y=1, center=center)
                 elif rect_y.contains(pos):
                     self.ax.vb.scaleBy(x=1, y=s_y, center=center)
                 elif rect_plot.contains(pos):
                     self.ax.vb.scaleBy(x=s_x, y=s_y, center=center)
                 else:
-                    if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
-                        self.ax.vb.scaleBy(x=1, y=s_y, center=center)
-                    else:
-                        self.ax.vb.scaleBy(x=s_x, y=1, center=center)
+                    self.ax.vb.scaleBy(x=s_x, y=1, center=center)
             
             except Exception as e:
                 print(f"Zoom interaction error: {e}")
@@ -330,6 +329,14 @@ class ChartWidget(QWidget):
         
         self._custom_wheel_event = custom_wheel_event
         self.ax.vb.wheelEvent = custom_wheel_event
+
+        orig_mouse_drag_event = self.ax.vb.mouseDragEvent
+        def custom_mouse_drag_event(ev, axis=None):
+            if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                ev.ignore()
+                return
+            return orig_mouse_drag_event(ev, axis)
+        self.ax.vb.mouseDragEvent = custom_mouse_drag_event
         
         # 4. 设置一些基础属性
         self.ax.showGrid(x=True, y=True)
@@ -352,6 +359,12 @@ class ChartWidget(QWidget):
         self.txt_time = pg.TextItem(text="", color='#FFFFFF', fill='#333333', anchor=(0.5, 1))
         self.txt_time.setZValue(20)
         self.ax.addItem(self.txt_time, ignoreBounds=True)
+
+        # 价差测算提示
+        self.txt_measure = pg.TextItem(text="", color='#FFFFFF', fill='#333333', anchor=(0, 1))
+        self.txt_measure.setZValue(20)
+        self.txt_measure.hide()
+        self.ax.addItem(self.txt_measure, ignoreBounds=True)
         
         self.ax.addItem(self.vLine, ignoreBounds=True)
         self.ax.addItem(self.hLine, ignoreBounds=True)
@@ -392,6 +405,8 @@ class ChartWidget(QWidget):
         self.current_df = None # 当前切片数据 (View Slice)
         self.current_x = None
         self.current_time_values = None
+        self.measure_active = False
+        self.measure_start_y = None
         
         # 监听 Range 变化，用于动态切片加载
         self.update_timer = QTimer()
@@ -503,6 +518,24 @@ class ChartWidget(QWidget):
         pos = evt[0]
         if self.ax.sceneBoundingRect().contains(pos):
             mousePoint = self.ax.vb.mapSceneToView(pos)
+
+            mods = QApplication.keyboardModifiers()
+            buttons = QApplication.mouseButtons()
+            ctrl_down = bool(mods & Qt.KeyboardModifier.ControlModifier)
+            left_down = bool(buttons & Qt.MouseButton.LeftButton)
+            if ctrl_down and left_down:
+                if not self.measure_active:
+                    self.measure_active = True
+                    self.measure_start_y = mousePoint.y()
+                diff = abs(mousePoint.y() - (self.measure_start_y or mousePoint.y()))
+                self.txt_measure.setText(f"Δ {diff:.3f}")
+                self.txt_measure.setPos(mousePoint.x(), mousePoint.y())
+                self.txt_measure.show()
+            else:
+                if self.measure_active:
+                    self.measure_active = False
+                    self.measure_start_y = None
+                    self.txt_measure.hide()
             
             # 1. 移动自己的水平线 (价格)
             self.hLine.setPos(mousePoint.y())
