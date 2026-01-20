@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QComboBox, QLabel, QSlider, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QScrollArea, QButtonGroup)
+                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QScrollArea, QButtonGroup)
 from PyQt6.QtGui import QAction, QPainter, QPicture
 from PyQt6.QtCore import Qt, QTimer, QDateTime, pyqtSignal, QSize
 from engine.data_engine import DataEngine
@@ -848,7 +848,70 @@ class MainWindow(QWidget):
         if self.engine.df_ticks is None:
             return
         if not self.replay_engine.states:
-            self.replay_engine.initialize(self._get_replay_periods(), self.current_time)
+            self.replay_engine.initialize(
+                self._get_replay_periods(),
+                self.current_time,
+                max_count_map=self._get_replay_max_count_map(),
+            )
+
+    def _get_replay_max_count_map(self):
+        max_count_map = {}
+        for chart in self.charts:
+            period = chart.current_period
+            max_count_map[period] = self._get_max_count_for_period(period)
+        return max_count_map
+
+    def _get_max_count_for_period(self, period):
+        tf = str(period).strip().lower()
+        if tf.endswith("min"):
+            try:
+                minutes = int(tf[:-3])
+            except ValueError:
+                return 1000
+            if minutes <= 5:
+                return 4000
+            if minutes <= 15:
+                return 2500
+            if minutes <= 60:
+                return 1800
+            return 1200
+        if tf.endswith("h"):
+            try:
+                hours = int(tf[:-1])
+            except ValueError:
+                return 1000
+            if hours <= 1:
+                return 1500
+            if hours <= 4:
+                return 1000
+            return 800
+        return 800
+
+    def _get_view_count_for_period(self, period):
+        tf = str(period).strip().lower()
+        if tf.endswith("min"):
+            try:
+                minutes = int(tf[:-3])
+            except ValueError:
+                return 300
+            if minutes <= 5:
+                return 800
+            if minutes <= 15:
+                return 600
+            if minutes <= 60:
+                return 400
+            return 300
+        if tf.endswith("h"):
+            try:
+                hours = int(tf[:-1])
+            except ValueError:
+                return 300
+            if hours <= 1:
+                return 400
+            if hours <= 4:
+                return 300
+            return 200
+        return 200
 
     def init_charts(self):
         # 初始只创建4个，默认给不同周期
@@ -888,13 +951,6 @@ class MainWindow(QWidget):
         if self.replay_engine is not None:
             self.replay_engine.reset(self.current_time)
         
-        # 更新进度条
-        idx = self.engine.df_ticks.index.searchsorted(self.current_time)
-        if idx < len(self.engine.df_ticks):
-            self.slider_progress.blockSignals(True)
-            self.slider_progress.setValue(idx)
-            self.slider_progress.blockSignals(False)
-        
         # 更新时间显示框
         self.date_edit.blockSignals(True)
         self._set_date_edit(self.current_time)
@@ -928,7 +984,11 @@ class MainWindow(QWidget):
 
     def on_chart_period_changed(self, chart, period_display):
         if self.chk_replay.isChecked() and self.engine.df_ticks is not None:
-            self.replay_engine.initialize(self._get_replay_periods(), self.current_time)
+            self.replay_engine.initialize(
+                self._get_replay_periods(),
+                self.current_time,
+                max_count_map=self._get_replay_max_count_map(),
+            )
 
         # 1. 刷新数据
         self.refresh_single_chart(chart, auto_scale=True)
@@ -970,16 +1030,19 @@ class MainWindow(QWidget):
         self.btn_play.clicked.connect(self.toggle_play)
         self.btn_play.setEnabled(False)
         panel.addWidget(self.btn_play)
-        
-        # 进度条 (Progress Slider)
-        self.slider_progress = QSlider(Qt.Orientation.Horizontal)
-        self.slider_progress.setRange(0, 100) # 初始范围
-        # 使用 sliderPressed/Released 来暂停/恢复播放，避免拖动时冲突
-        self.slider_progress.sliderPressed.connect(self.on_slider_pressed)
-        self.slider_progress.sliderReleased.connect(self.on_slider_released)
-        # 实时拖动更新
-        self.slider_progress.valueChanged.connect(self.on_progress_change)
-        panel.addWidget(self.slider_progress)
+
+        self.btn_step_back = QPushButton("Back")
+        self.btn_step_back.clicked.connect(self.on_step_back)
+        panel.addWidget(self.btn_step_back)
+
+        self.btn_step_forward = QPushButton("Forward")
+        self.btn_step_forward.clicked.connect(self.on_step_forward)
+        panel.addWidget(self.btn_step_forward)
+
+        self.combo_step = QComboBox()
+        self.combo_step.addItems(["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D"])
+        self.combo_step.setCurrentText("1h")
+        panel.addWidget(self.combo_step)
         
         panel.addWidget(QLabel("Speed:"))
         
@@ -1096,50 +1159,65 @@ class MainWindow(QWidget):
         self.engine.load_data()
         if self.engine.df_ticks is not None:
             total_ticks = len(self.engine.df_ticks)
-            self.slider_progress.blockSignals(True)
-            self.slider_progress.setRange(0, total_ticks - 1)
-
             if total_ticks > 100000:
                 self.current_time = self.engine.df_ticks.index[100000]
-                self.slider_progress.setValue(100000)
             else:
                 self.current_time = self.engine.df_ticks.index[0]
-                self.slider_progress.setValue(0)
-            self.slider_progress.blockSignals(False)
 
             if hasattr(self, 'date_edit'):
                 self._set_date_edit(self.current_time)
             # 强制重置视图，确保K线居中显示
             self.reset_charts_view()
             if hasattr(self, 'replay_engine'):
-                self.replay_engine.initialize(self._get_replay_periods(), self.current_time)
-
-    def on_slider_pressed(self):
-        self.was_playing = self.is_playing
-        if self.is_playing:
-            self.toggle_play()
-
-    def on_slider_released(self):
-        if hasattr(self, 'was_playing') and self.was_playing:
-            self.toggle_play()
-
-    def on_progress_change(self, val):
-        if self.engine.df_ticks is not None and 0 <= val < len(self.engine.df_ticks):
-            self.current_time = self.engine.df_ticks.index[val]
-
-            self.date_edit.blockSignals(True)
-            self._set_date_edit(self.current_time)
-            self.date_edit.blockSignals(False)
-            if self.chk_replay.isChecked():
-                self.replay_engine.reset(self.current_time)
-            
-            if not self.is_playing:
-                self.refresh_all_charts(auto_scale=False)
+                self.replay_engine.initialize(
+                    self._get_replay_periods(),
+                    self.current_time,
+                    max_count_map=self._get_replay_max_count_map(),
+                )
 
     def open_file_dialog(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Open Parquet Data", "", "Parquet Files (*.parquet);;All Files (*)")
         if file_name:
             self.load_data_file(file_name)
+
+    def _get_step_delta(self):
+        if not hasattr(self, "combo_step"):
+            return None
+        text = self.combo_step.currentText().strip()
+        try:
+            return pd.Timedelta(text)
+        except Exception:
+            return None
+
+    def _apply_time_jump(self, delta):
+        if delta is None:
+            return
+        new_time = self._normalize_time(self.current_time) + delta
+        if self.engine.df_ticks is not None and not self.engine.df_ticks.empty:
+            start = self.engine.df_ticks.index[0]
+            end = self.engine.df_ticks.index[-1]
+            if new_time < start:
+                new_time = start
+            if new_time > end:
+                new_time = end
+
+        self.current_time = new_time
+        self.date_edit.blockSignals(True)
+        self._set_date_edit(self.current_time)
+        self.date_edit.blockSignals(False)
+        if self.chk_replay.isChecked():
+            self.replay_engine.reset(self.current_time)
+        self.refresh_all_charts(auto_scale=True)
+
+    def on_step_back(self):
+        delta = self._get_step_delta()
+        if delta is not None:
+            self._apply_time_jump(-delta)
+
+    def on_step_forward(self):
+        delta = self._get_step_delta()
+        if delta is not None:
+            self._apply_time_jump(delta)
 
     def on_mode_change(self, state):
         is_replay = self.chk_replay.isChecked()
@@ -1165,7 +1243,8 @@ class MainWindow(QWidget):
         target_idx = None
         if self.chk_replay.isChecked():
             self._ensure_replay_engine()
-            df = self.replay_engine.get_view(chart.current_period, count=300, with_indicators=True)
+            view_count = self._get_view_count_for_period(chart.current_period)
+            df = self.replay_engine.get_view(chart.current_period, count=view_count, with_indicators=True)
             if df is not None:
                 target_idx = len(df) - 1
         else:
@@ -1202,9 +1281,6 @@ class MainWindow(QWidget):
             idx = min(self.replay_engine.tick_pos, len(self.engine.df_ticks) - 1)
             if idx >= len(self.engine.df_ticks) - 1:
                 self.toggle_play()
-            self.slider_progress.blockSignals(True)
-            self.slider_progress.setValue(idx)
-            self.slider_progress.blockSignals(False)
 
         self.date_edit.blockSignals(True)
         self._set_date_edit(self.current_time)

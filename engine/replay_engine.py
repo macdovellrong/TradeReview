@@ -6,6 +6,7 @@ class ReplayEngine:
     def __init__(self, data_engine, max_count=1000, max_ticks_per_frame=20000):
         self.engine = data_engine
         self.max_count = max_count
+        self.max_count_map = {}
         self.max_ticks_per_frame = max_ticks_per_frame
         self.periods = []
         self.states = {}
@@ -14,8 +15,9 @@ class ReplayEngine:
         self._tick_prices = None
         self._tick_volumes = None
 
-    def initialize(self, periods, start_time):
+    def initialize(self, periods, start_time, max_count_map=None):
         self.periods = list(periods)
+        self.max_count_map = max_count_map or {}
         self._build_tick_arrays()
         self._build_states(start_time)
 
@@ -116,8 +118,9 @@ class ReplayEngine:
                 pos = 0
 
             completed = df_full.iloc[:pos]
-            if len(completed) > self.max_count:
-                completed = completed.tail(self.max_count)
+            max_count = self.max_count_map.get(period, self.max_count)
+            if len(completed) > max_count:
+                completed = completed.tail(max_count)
 
             completed_index = list(completed.index)
             completed_open = list(completed["open"].to_numpy(dtype=np.float64))
@@ -152,6 +155,7 @@ class ReplayEngine:
                 "period_values": period_values,
                 "pos": pos,
                 "next_start": next_start,
+                "max_count": max_count,
                 "completed_index": completed_index,
                 "completed_open": completed_open,
                 "completed_high": completed_high,
@@ -219,7 +223,8 @@ class ReplayEngine:
         state["completed_low"].append(l)
         state["completed_close"].append(c)
         state["completed_volume"].append(v)
-        if len(state["completed_index"]) > self.max_count:
+        max_count = state.get("max_count", self.max_count)
+        if len(state["completed_index"]) > max_count:
             state["completed_index"].pop(0)
             state["completed_open"].pop(0)
             state["completed_high"].pop(0)
