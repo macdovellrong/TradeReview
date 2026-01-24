@@ -384,6 +384,11 @@ class ChartWidget(QWidget):
         self.txt_measure.setZValue(20)
         self.txt_measure.hide()
         self.ax.addItem(self.txt_measure, ignoreBounds=True)
+
+        # K线信息提示 (左上角)
+        self.txt_kinfo = pg.TextItem(text="", color='#FFFFFF', fill='#222222', anchor=(0, 0))
+        self.txt_kinfo.setZValue(20)
+        self.ax.addItem(self.txt_kinfo, ignoreBounds=True)
         
         self.ax.addItem(self.vLine, ignoreBounds=True)
         self.ax.addItem(self.hLine, ignoreBounds=True)
@@ -657,8 +662,22 @@ class ChartWidget(QWidget):
                 
                 # 位置跟随鼠标 (平滑)，而不是吸附到 idx
                 self.txt_time.setPos(mousePoint.x(), y_min)
-                self.txt_time.setAnchor((0.5, 1)) 
-                
+                self.txt_time.setAnchor((0.5, 1))
+
+                # K线信息 (开高低收 + RSI)
+                if 0 <= idx <= last_idx:
+                    row = self.current_df.iloc[idx]
+                    o = row.get('open', np.nan)
+                    h = row.get('high', np.nan)
+                    l = row.get('low', np.nan)
+                    c = row.get('close', np.nan)
+                    rsi = row.get('RSI', np.nan)
+                    info = (
+                        f"O {o:.3f}  H {h:.3f}  L {l:.3f}  C {c:.3f}  RSI {rsi:.3f}"
+                    )
+                    self.txt_kinfo.setText(info)
+                    self.txt_kinfo.setPos(x_min, y_max)
+
                 # 发射信号 (如果是未来时间，也发射时间戳，以便其他窗口同步)
                 # 使用 dt.value (纳秒) 转为秒，避免 naive datetime 的 timestamp() 时区问题
                 ts_seconds = dt.value / 1e9
