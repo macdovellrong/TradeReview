@@ -259,6 +259,10 @@ class ChartWidget(QWidget):
         
         self.time_axis = TimeAxisItem(orientation='bottom')
         self.ax = self.glw.addPlot(axisItems={'bottom': self.time_axis})
+        self.glw.nextRow()
+        self.ax_macd = self.glw.addPlot()
+        self.glw.nextRow()
+        self.ax_rsi = self.glw.addPlot()
         self.ax.significant_decimals = 4 
         self.ax.significant_eps = 1e-4
         
@@ -344,6 +348,21 @@ class ChartWidget(QWidget):
         self.ax.showAxis('left', show=False)
         self.ax.getAxis('right').setWidth(60)
 
+        self.ax_macd.showGrid(x=True, y=True)
+        self.ax_macd.showAxis('right', show=True)
+        self.ax_macd.showAxis('left', show=False)
+        self.ax_macd.getAxis('right').setWidth(60)
+        self.ax_macd.showAxis('bottom', show=False)
+        self.ax_macd.setXLink(self.ax)
+        self.ax_macd.setMaximumHeight(140)
+
+        self.ax_rsi.showGrid(x=True, y=True)
+        self.ax_rsi.showAxis('right', show=True)
+        self.ax_rsi.showAxis('left', show=False)
+        self.ax_rsi.getAxis('right').setWidth(60)
+        self.ax_rsi.setXLink(self.ax)
+        self.ax_rsi.setMaximumHeight(120)
+
         # 十字光标 (Crosshair)
         self.vLine = pg.InfiniteLine(angle=90, movable=False)
         self.vLine.setPen(pg.mkPen(color='#FFFFFF', style=Qt.PenStyle.DashLine, width=1))
@@ -400,7 +419,9 @@ class ChartWidget(QWidget):
         
         self.current_period = "1min"
         self.plot_item = None 
-        self.indicator_items = {} 
+        self.indicator_items = {}
+        self.macd_items = {}
+        self.rsi_items = {}
         self.full_df = None # 全量数据引用
         self.current_df = None # 当前切片数据 (View Slice)
         self.current_x = None
@@ -511,8 +532,67 @@ class ChartWidget(QWidget):
                 else:
                     self.indicator_items[name].setData(x=x_data, y=y_data)
 
+        # MACD
+        if 'MACD' in df.columns and 'MACD_Signal' in df.columns:
+            macd = df['MACD'].to_numpy(dtype=np.float64)
+            signal = df['MACD_Signal'].to_numpy(dtype=np.float64)
+            hist = df.get('MACD_Hist')
+            hist_data = hist.to_numpy(dtype=np.float64) if hist is not None else None
+
+            if 'MACD' not in self.macd_items:
+                macd_curve = pg.PlotCurveItem(x=x_data, y=macd, pen=pg.mkPen('#00FFFF', width=1.2))
+                signal_curve = pg.PlotCurveItem(x=x_data, y=signal, pen=pg.mkPen('#FFAA00', width=1.2))
+                self.ax_macd.addItem(macd_curve)
+                self.ax_macd.addItem(signal_curve)
+                self.macd_items['MACD'] = macd_curve
+                self.macd_items['MACD_Signal'] = signal_curve
+            else:
+                self.macd_items['MACD'].setData(x=x_data, y=macd)
+                self.macd_items['MACD_Signal'].setData(x=x_data, y=signal)
+
+            if hist_data is not None:
+                # Remove legacy single-color histogram if present
+                if 'MACD_Hist' in self.macd_items:
+                    self.ax_macd.removeItem(self.macd_items['MACD_Hist'])
+                    del self.macd_items['MACD_Hist']
+
+                pos = np.where(hist_data > 0, hist_data, 0)
+                neg = np.where(hist_data < 0, hist_data, 0)
+
+                if 'MACD_Hist_Pos' not in self.macd_items:
+                    hist_pos = pg.BarGraphItem(x=x_data, height=pos, width=0.6, brush=pg.mkBrush('#FF3333'))
+                    hist_neg = pg.BarGraphItem(x=x_data, height=neg, width=0.6, brush=pg.mkBrush('#66CCFF'))
+                    self.ax_macd.addItem(hist_pos)
+                    self.ax_macd.addItem(hist_neg)
+                    self.macd_items['MACD_Hist_Pos'] = hist_pos
+                    self.macd_items['MACD_Hist_Neg'] = hist_neg
+                else:
+                    self.macd_items['MACD_Hist_Pos'].setOpts(x=x_data, height=pos)
+                    self.macd_items['MACD_Hist_Neg'].setOpts(x=x_data, height=neg)
+
+        # RSI
+        if 'RSI' in df.columns:
+            rsi = df['RSI'].to_numpy(dtype=np.float64)
+            if 'RSI' not in self.rsi_items:
+                rsi_curve = pg.PlotCurveItem(x=x_data, y=rsi, pen=pg.mkPen('#66FF66', width=1.2))
+                self.ax_rsi.addItem(rsi_curve)
+                self.rsi_items['RSI'] = rsi_curve
+
+                line30 = pg.InfiniteLine(angle=0, pos=30, pen=pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine))
+                line70 = pg.InfiniteLine(angle=0, pos=70, pen=pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine))
+                self.ax_rsi.addItem(line30)
+                self.ax_rsi.addItem(line70)
+                self.rsi_items['RSI_30'] = line30
+                self.rsi_items['RSI_70'] = line70
+            else:
+                self.rsi_items['RSI'].setData(x=x_data, y=rsi)
+
+            self.ax_rsi.setYRange(0, 100, padding=0)
+
         # View limits
         self.ax.vb.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
+        self.ax_macd.vb.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
+        self.ax_rsi.vb.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
 
     def on_mouse_move(self, evt):
         pos = evt[0]
@@ -1194,6 +1274,17 @@ class MainWindow(QWidget):
             
         elif layout_name == "Tabs":
             self.tabs = QTabWidget()
+            self.tabs.setStyleSheet(
+                "QTabBar::tab {"
+                " height: 30px; padding: 6px 16px; font-size: 12px;"
+                " background: #1e1e1e; color: #9aa0a6; border: 1px solid #2a2a2a;"
+                " border-bottom: 0; border-top-left-radius: 6px; border-top-right-radius: 6px;"
+                " margin-right: 4px;"
+                "}"
+                "QTabBar::tab:selected { background: #2b2b2b; color: #ffffff; border-color: #3a3a3a; }"
+                "QTabBar::tab:hover { background: #252525; color: #d0d0d0; }"
+                "QTabWidget::pane { border-top: 1px solid #3a3a3a; }"
+            )
             for chart in active_charts:
                 # 获取当前显示的周期名作为标题
                 title = chart.display_map.get(chart.current_period, chart.current_period)

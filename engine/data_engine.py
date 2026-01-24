@@ -175,7 +175,23 @@ class DataEngine:
         df['BB_Upper'] = sma20 + 2 * std20
         df['BB_Lower'] = sma20 - 2 * std20
         # df['BB_Mid'] = sma20 # 如果需要画中轨
-        
+
+        # MACD (12, 26, 9)
+        ema12 = df['close'].ewm(span=12, adjust=False).mean()
+        ema26 = df['close'].ewm(span=26, adjust=False).mean()
+        df['MACD'] = ema12 - ema26
+        df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+        df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+
+        # RSI (14)
+        delta = df['close'].diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+        avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        df['RSI'] = 100 - (100 / (1 + rs))
+
         return df
 
 

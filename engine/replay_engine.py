@@ -8,6 +8,7 @@ class ReplayEngine:
         self.max_count = max_count
         self.max_count_map = {}
         self.max_ticks_per_frame = max_ticks_per_frame
+        self.auto_skip_gaps = True
         self.periods = []
         self.states = {}
         self.tick_pos = 0
@@ -33,6 +34,14 @@ class ReplayEngine:
         end_ts64 = end_ts.to_datetime64()
         end_pos = int(np.searchsorted(self._tick_times, end_ts64, side="right"))
         if end_pos <= self.tick_pos:
+            if self.auto_skip_gaps and self.tick_pos < len(self._tick_times):
+                ts = self._tick_times[self.tick_pos]
+                price = self._tick_prices[self.tick_pos]
+                volume = self._tick_volumes[self.tick_pos]
+                for state in self.states.values():
+                    self._update_state_with_tick(state, ts, price, volume)
+                self.tick_pos += 1
+                return pd.Timestamp(ts)
             return end_ts
 
         max_pos = min(end_pos, self.tick_pos + self.max_ticks_per_frame)
