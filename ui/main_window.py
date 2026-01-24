@@ -392,6 +392,15 @@ class ChartWidget(QWidget):
         
         self.ax.addItem(self.vLine, ignoreBounds=True)
         self.ax.addItem(self.hLine, ignoreBounds=True)
+
+        # MACD/RSI vertical cursor lines
+        self.vLine_macd = pg.InfiniteLine(angle=90, movable=False)
+        self.vLine_macd.setPen(pg.mkPen(color='#FFFFFF', style=Qt.PenStyle.DashLine, width=1))
+        self.ax_macd.addItem(self.vLine_macd, ignoreBounds=True)
+
+        self.vLine_rsi = pg.InfiniteLine(angle=90, movable=False)
+        self.vLine_rsi.setPen(pg.mkPen(color='#FFFFFF', style=Qt.PenStyle.DashLine, width=1))
+        self.ax_rsi.addItem(self.vLine_rsi, ignoreBounds=True)
         
         # 监听鼠标移动
         self.proxy = pg.SignalProxy(self.ax.scene().sigMouseMoved, rateLimit=60, slot=self.on_mouse_move)
@@ -626,6 +635,8 @@ class ChartWidget(QWidget):
             self.hLine.setPos(mousePoint.y())
             # 移动垂直线 (时间) - 恢复平滑跟随鼠标，不强制吸附
             self.vLine.setPos(mousePoint.x())
+            self.vLine_macd.setPos(mousePoint.x())
+            self.vLine_rsi.setPos(mousePoint.x())
             
             # 获取当前视图范围
             view_range = self.ax.vb.viewRange()
@@ -775,11 +786,13 @@ class ChartWidget(QWidget):
         if len(self.current_time_values) > 0:
             first_ts = self.current_time_values[0]
             last_ts = self.current_time_values[-1]
-            
+
             if first_ts <= ts_ns <= last_ts:
                 # 范围内
                 idx = int(np.searchsorted(self.current_time_values, ts_ns))
                 self.vLine.setPos(idx)
+                self.vLine_macd.setPos(idx)
+                self.vLine_rsi.setPos(idx)
             else:
                 # 范围外，进行反算
                 delta_ns = self.time_axis._delta.total_seconds() * 1e9
@@ -791,6 +804,8 @@ class ChartWidget(QWidget):
                         diff = (ts_ns - first_ts) / delta_ns
                         idx = diff # 负数
                     self.vLine.setPos(idx)
+                    self.vLine_macd.setPos(idx)
+                    self.vLine_rsi.setPos(idx)
 
     def sync_crosshair(self, timestamp, price):
         self.sync_vline(timestamp)
