@@ -578,12 +578,12 @@ class ChartWidget(QWidget):
                 self.ax_rsi.addItem(rsi_curve)
                 self.rsi_items['RSI'] = rsi_curve
 
-                line30 = pg.InfiniteLine(angle=0, pos=30, pen=pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine))
-                line70 = pg.InfiniteLine(angle=0, pos=70, pen=pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine))
-                self.ax_rsi.addItem(line30)
-                self.ax_rsi.addItem(line70)
-                self.rsi_items['RSI_30'] = line30
-                self.rsi_items['RSI_70'] = line70
+                line20 = pg.InfiniteLine(angle=0, pos=20, pen=pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine))
+                line80 = pg.InfiniteLine(angle=0, pos=80, pen=pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine))
+                self.ax_rsi.addItem(line20)
+                self.ax_rsi.addItem(line80)
+                self.rsi_items['RSI_20'] = line20
+                self.rsi_items['RSI_80'] = line80
             else:
                 self.rsi_items['RSI'].setData(x=x_data, y=rsi)
 
