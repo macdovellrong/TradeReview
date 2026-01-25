@@ -196,7 +196,7 @@ class ChartWidget(QWidget):
             ("10min", "10m"), ("15min", "15m"), ("30min", "30m"), ("45min", "45m"),
             ("1h", "1h"), ("2h", "2h"), ("3h", "3h"), ("4h", "4h"), 
             ("6h", "6h"), ("8h", "8h"), ("12h", "12h"),
-            ("1D", "1D"), ("1W", "1W"), ("1M", "1M")
+            ("1D", "1D")
         ]
         
         self.period_map = {p[1]: p[0] for p in periods} # display -> actual
