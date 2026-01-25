@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 
@@ -8,13 +9,45 @@ class DataEngine:
         self.calendar_name = "CME_FX"
         self._calendar = None
         self._candles_cache = {}
+        self._duckdb_path = None
+        self._duckdb_candles_tables = set()
         self.load_data()
 
     def load_data(self):
         """加载 Tick 数据并进行基础处理"""
         print(f"Loading data from {self.parquet_file}...")
         try:
-            self.df_ticks = pd.read_parquet(self.parquet_file)
+            if not self.parquet_file:
+                return
+
+            ext = os.path.splitext(self.parquet_file)[1].lower()
+            if ext == ".duckdb":
+                try:
+                    import duckdb
+                except Exception as e:
+                    print(f"Error loading DuckDB: {e}")
+                    return
+
+                self._duckdb_path = self.parquet_file
+                con = duckdb.connect(self.parquet_file, read_only=True)
+                tables = [t[0] for t in con.execute("SHOW TABLES").fetchall()]
+                self._duckdb_candles_tables = {t for t in tables if t.startswith("candles_")}
+                if self._duckdb_candles_tables:
+                    periods = [self._period_from_table(t) for t in sorted(self._duckdb_candles_tables)]
+                    print(f"DuckDB candle tables: {', '.join(periods)}")
+
+                df = con.execute("SELECT * FROM ticks ORDER BY timestamp").df()
+                con.close()
+                if "timestamp" not in df.columns:
+                    print("Error loading DuckDB: missing 'timestamp' column in ticks table. Please rebuild DuckDB.")
+                    return
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                df.set_index("timestamp", inplace=True)
+                self.df_ticks = df
+            else:
+                self._duckdb_path = None
+                self._duckdb_candles_tables = set()
+                self.df_ticks = pd.read_parquet(self.parquet_file)
             
             # 1. 时区处理
             # 用户反馈数据源(QDM)已导出为美东时间 (America/New_York)
@@ -33,6 +66,28 @@ class DataEngine:
         except Exception as e:
             print(f"Error loading data: {e}")
 
+    def _duckdb_table_for_timeframe(self, timeframe):
+        tf = str(timeframe).strip().lower()
+        if tf.endswith("min"):
+            suffix = f"{tf[:-3]}m"
+        elif tf.endswith("h"):
+            suffix = tf
+        elif tf.endswith("d"):
+            suffix = f"{tf[:-1]}D"
+        elif tf.endswith("w"):
+            suffix = f"{tf[:-1]}W"
+        elif tf.endswith("m") and not tf.endswith("min"):
+            suffix = f"{tf[:-1]}M"
+        else:
+            return None
+        return f"candles_{suffix}"
+
+    def _period_from_table(self, table_name):
+        suffix = table_name.replace("candles_", "")
+        if suffix.endswith("m") and suffix[:-1].isdigit():
+            return f"{suffix[:-1]}min"
+        return suffix
+
     def get_candles(self, timeframe='1min'):
         """
         将 Tick 数据重采样为 OHLCV K线数据 (全量)
@@ -42,6 +97,24 @@ class DataEngine:
             return None
         if timeframe in self._candles_cache:
             return self._candles_cache[timeframe]
+
+        if self._duckdb_path:
+            table = self._duckdb_table_for_timeframe(timeframe)
+            if table and table in self._duckdb_candles_tables:
+                try:
+                    import duckdb
+                    con = duckdb.connect(self._duckdb_path, read_only=True)
+                    df = con.execute(f"SELECT * FROM {table} ORDER BY timestamp").df()
+                    con.close()
+                    if "timestamp" not in df.columns and "time" in df.columns:
+                        df = df.rename(columns={"time": "timestamp"})
+                    if "timestamp" in df.columns:
+                        df["timestamp"] = pd.to_datetime(df["timestamp"])
+                        df.set_index("timestamp", inplace=True)
+                    self._candles_cache[timeframe] = df
+                    return df
+                except Exception as e:
+                    print(f"Error loading DuckDB candles for {timeframe}: {e}")
 
         # 规范化周期格式
         # Pandas 新版本推荐使用 'h' 而不是 'H'，这里不再强制大写
@@ -62,18 +135,20 @@ class DataEngine:
         origin_ts = pd.Timestamp("2000-01-01 17:00:00")
         
         # 1. 价格 OHLC (明确左闭左标)
-        ohlc = price_series.resample(timeframe, closed='left', label='left', origin=origin_ts).ohlc()
+        timeframe_norm = self._normalize_timeframe(timeframe)
+        ohlc = price_series.resample(timeframe_norm, closed='left', label='left', origin=origin_ts).ohlc()
         
         # 2. 成交量 Sum
-        vol = vol_series.resample(timeframe, closed='left', label='left', origin=origin_ts).sum()
+        vol = vol_series.resample(timeframe_norm, closed='left', label='left', origin=origin_ts).sum()
         
         # 3. 合并
         df_candles = pd.concat([ohlc, vol], axis=1)
         if not self._should_dropna(timeframe):
             full_index = self._build_full_index(
-                naive_index[0], naive_index[-1], timeframe, origin_ts
+                naive_index[0], naive_index[-1], timeframe_norm, origin_ts
             )
-            full_index = self._filter_index_by_calendar(full_index, timeframe)
+            if self._should_filter_by_calendar(timeframe):
+                full_index = self._filter_index_by_calendar(full_index, timeframe)
             df_candles = df_candles.reindex(full_index)
 
         
@@ -144,14 +219,16 @@ class DataEngine:
         origin_ts = pd.Timestamp("2000-01-01 17:00:00")
 
         # 2. 合成 K 线
-        ohlc = price_series.resample(timeframe, closed='left', label='left', origin=origin_ts).ohlc()
-        vol = vol_series.resample(timeframe, closed='left', label='left', origin=origin_ts).sum()
+        timeframe_norm = self._normalize_timeframe(timeframe)
+        ohlc = price_series.resample(timeframe_norm, closed='left', label='left', origin=origin_ts).ohlc()
+        vol = vol_series.resample(timeframe_norm, closed='left', label='left', origin=origin_ts).sum()
         df_candles = pd.concat([ohlc, vol], axis=1)
         if not self._should_dropna(timeframe):
             full_index = self._build_full_index(
-                naive_index[0], naive_index[-1], timeframe, origin_ts
+                naive_index[0], naive_index[-1], timeframe_norm, origin_ts
             )
-            full_index = self._filter_index_by_calendar(full_index, timeframe)
+            if self._should_filter_by_calendar(timeframe):
+                full_index = self._filter_index_by_calendar(full_index, timeframe)
             df_candles = df_candles.reindex(full_index)
         if self._should_dropna(timeframe):
             df_candles.dropna(inplace=True)
@@ -205,9 +282,23 @@ class DataEngine:
             return minutes <= 60
         if tf.endswith("h"):
             try:
-                hours = int(tf[:-1])
+                int(tf[:-1])
             except ValueError:
                 return True
+            return True
+        if tf.endswith("d") or tf.endswith("w") or (tf.endswith("m") and not tf.endswith("min")):
+            return True
+        return False
+
+    def _normalize_timeframe(self, timeframe):
+        tf = str(timeframe).strip()
+        if tf.endswith("M") and tf[:-1].isdigit():
+            return f"{tf[:-1]}ME"
+        return tf
+
+    def _should_filter_by_calendar(self, timeframe):
+        tf = str(timeframe).strip().lower()
+        if tf.endswith("min") or tf.endswith("h"):
             return True
         return False
 

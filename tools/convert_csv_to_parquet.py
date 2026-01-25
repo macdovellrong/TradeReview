@@ -1,6 +1,8 @@
 import pandas as pd
 import os
 import glob
+import sys
+import subprocess
 from datetime import datetime
 
 def convert_csv_to_parquet():
@@ -123,6 +125,18 @@ def convert_csv_to_parquet():
     print("转换完成！")
     print(f"包含 {len(df)} 条 Tick 数据。")
     print(f"时间范围: {df.index[0]} - {df.index[-1]}")
+
+    # 9. 可选：直接生成 DuckDB
+    to_duckdb = input("\n是否生成 DuckDB 预计算文件? (y/n, 默认 n): ").strip().lower() == 'y'
+    if to_duckdb:
+        script_path = os.path.join(os.path.dirname(__file__), "convert_parquet_to_duckdb.py")
+        db_path = os.path.join("data", os.path.splitext(os.path.basename(file_path))[0] + ".duckdb")
+        cmd = [sys.executable, script_path, output_path, "--db", db_path]
+        print(f"\n正在生成 DuckDB: {db_path}")
+        try:
+            subprocess.run(cmd, check=True)
+        except Exception as e:
+            print(f"DuckDB 生成失败: {e}")
 
 if __name__ == "__main__":
     try:
