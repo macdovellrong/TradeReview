@@ -585,22 +585,31 @@ class ChartWidget(QWidget):
                     self.macd_items['MACD_Hist_Neg'].setOpts(x=x_data, height=neg)
 
         # RSI
-        if 'RSI' in df.columns:
-            rsi = df['RSI'].to_numpy(dtype=np.float64)
-            if 'RSI' not in self.rsi_items:
-                rsi_curve = pg.PlotCurveItem(x=x_data, y=rsi, pen=pg.mkPen('#66FF66', width=1.2))
-                self.ax_rsi.addItem(rsi_curve)
-                self.rsi_items['RSI'] = rsi_curve
+        rsi_defs = [
+            ("RSI6", "#66FF66"),
+            ("RSI12", "#FFD24D"),
+            ("RSI24", "#66A3FF"),
+        ]
+        has_any_rsi = False
+        for name, color in rsi_defs:
+            if name in df.columns:
+                has_any_rsi = True
+                rsi = df[name].to_numpy(dtype=np.float64)
+                if name not in self.rsi_items:
+                    rsi_curve = pg.PlotCurveItem(x=x_data, y=rsi, pen=pg.mkPen(color, width=1.2))
+                    self.ax_rsi.addItem(rsi_curve)
+                    self.rsi_items[name] = rsi_curve
+                else:
+                    self.rsi_items[name].setData(x=x_data, y=rsi)
 
+        if has_any_rsi:
+            if 'RSI_20' not in self.rsi_items:
                 line20 = pg.InfiniteLine(angle=0, pos=20, pen=pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine))
                 line80 = pg.InfiniteLine(angle=0, pos=80, pen=pg.mkPen('#444444', width=1, style=Qt.PenStyle.DashLine))
                 self.ax_rsi.addItem(line20)
                 self.ax_rsi.addItem(line80)
                 self.rsi_items['RSI_20'] = line20
                 self.rsi_items['RSI_80'] = line80
-            else:
-                self.rsi_items['RSI'].setData(x=x_data, y=rsi)
-
             self.ax_rsi.setYRange(0, 100, padding=0)
 
         # View limits
@@ -1350,7 +1359,12 @@ class MainWindow(QWidget):
                 )
 
     def open_file_dialog(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, "Open Parquet Data", "", "Parquet Files (*.parquet);;All Files (*)")
+        file_name, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Data",
+            "",
+            "Data Files (*.parquet *.duckdb);;Parquet Files (*.parquet);;DuckDB Files (*.duckdb);;All Files (*)",
+        )
         if file_name:
             self.load_data_file(file_name)
 
