@@ -170,7 +170,7 @@ def main():
     parser.add_argument("--db", default="data/candles.duckdb", help="Output DuckDB file path")
     parser.add_argument(
         "--periods",
-        default="1min,5min,15min,30min,45min,1h,2h,3h,4h,6h,8h,12h,1D,1W,1M",
+        default="1min,5min,15min,30min,45min,1h,2h,3h,4h,6h,8h,12h,1D",
         help="Comma-separated periods",
     )
     args = parser.parse_args()
