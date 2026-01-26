@@ -684,18 +684,23 @@ class ChartWidget(QWidget):
                 self.txt_time.setPos(mousePoint.x(), y_min)
                 self.txt_time.setAnchor((0.5, 1))
 
-                # K线信息 (开高低收 + RSI)
+                # K线信息 (开高低收 + RSI6/12/24)
                 if 0 <= idx <= last_idx:
                     row = self.current_df.iloc[idx]
                     o = row.get('open', np.nan)
                     h = row.get('high', np.nan)
                     l = row.get('low', np.nan)
                     c = row.get('close', np.nan)
-                    rsi = row.get('RSI', np.nan)
+                    rsi6 = row.get('RSI6', np.nan)
+                    rsi12 = row.get('RSI12', np.nan)
+                    rsi24 = row.get('RSI24', np.nan)
                     info = (
-                        f"O {o:.3f}  H {h:.3f}  L {l:.3f}  C {c:.3f}  RSI {rsi:.3f}"
+                        f"O {o:.3f}  H {h:.3f}  L {l:.3f}  C {c:.3f}  "
+                        f"<span style='color:#66FF66'>RSI6 {rsi6:.3f}</span>  "
+                        f"<span style='color:#FFD24D'>RSI12 {rsi12:.3f}</span>  "
+                        f"<span style='color:#66A3FF'>RSI24 {rsi24:.3f}</span>"
                     )
-                    self.txt_kinfo.setText(info)
+                    self.txt_kinfo.setHtml(info)
                     self.txt_kinfo.setPos(x_min, y_max)
 
                 # 发射信号 (如果是未来时间，也发射时间戳，以便其他窗口同步)
