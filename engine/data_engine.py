@@ -108,6 +108,8 @@ class DataEngine:
                     con.close()
                     if "timestamp" not in df.columns and "time" in df.columns:
                         df = df.rename(columns={"time": "timestamp"})
+                    if "timestamp" not in df.columns and "datetime" in df.columns:
+                        df = df.rename(columns={"datetime": "timestamp"})
                     if "timestamp" in df.columns:
                         df["timestamp"] = pd.to_datetime(df["timestamp"])
                         df.set_index("timestamp", inplace=True)

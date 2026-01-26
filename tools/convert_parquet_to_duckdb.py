@@ -210,6 +210,8 @@ def main():
             candles = candles.rename(columns={"index": "timestamp"})
         if "timestamp" not in candles.columns and "time" in candles.columns:
             candles = candles.rename(columns={"time": "timestamp"})
+        if "timestamp" not in candles.columns and "datetime" in candles.columns:
+            candles = candles.rename(columns={"datetime": "timestamp"})
         table = f"candles_{tf.replace('min','m').replace('h','h').replace('D','D')}"
         con.register("candles_df", candles)
         con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM candles_df")
