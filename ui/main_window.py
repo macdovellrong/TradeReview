@@ -1134,26 +1134,38 @@ class MainWindow(QWidget):
 
     def sync_charts_center(self, target_dt):
         """将所有图表视图中心对齐到指定时间"""
+        target_ts = self._normalize_time(target_dt)
         for chart in self.charts:
             if chart.full_df is None or chart.full_df.empty:
                 continue
-                
-            # 1. 找到目标时间对应的索引 (支持近似查找)
-            # 由于可能存在数据缺口，使用 searchsorted 找到最近的插入点
-            # 如果 target_dt 超出范围，需要特殊处理吗？ searchsorted 会返回 0 或 len
-            
-            # 为了更精确，使用 index 的 searchsorted
-            idx = self.engine.df_ticks.index.searchsorted(self.current_time)
-            
-            # 2. 获取当前视图跨度 (保持缩放比例不变)
+
+            idx = self._get_chart_index_for_dt(chart, target_ts)
+            if idx is None:
+                continue
+
             view_range = chart.ax.vb.viewRange()[0]
             span = view_range[1] - view_range[0]
-            
-            # 3. 计算新的范围，使 idx 居中
+
             new_min = idx - span / 2
             new_max = idx + span / 2
-            
+
             chart.ax.setXRange(new_min, new_max, padding=0)
+
+    def _get_chart_index_for_dt(self, chart, target_dt):
+        df = chart.full_df
+        if df is None or df.empty:
+            return None
+        ts = target_dt
+        if df.index.tz is None and ts.tzinfo is not None:
+            ts = ts.tz_convert("America/New_York").tz_localize(None)
+        elif df.index.tz is not None and ts.tzinfo is None:
+            ts = ts.tz_localize(df.index.tz)
+        idx = int(df.index.searchsorted(ts))
+        if idx < 0:
+            idx = 0
+        if idx >= len(df):
+            idx = len(df) - 1
+        return idx
 
     def on_chart_period_changed(self, chart, period_display):
         if self.chk_replay.isChecked() and self.engine.df_ticks is not None:
