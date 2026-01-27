@@ -151,6 +151,10 @@ class ChartWidget(QWidget):
     sig_mouse_moved = pyqtSignal(float)
     # 定义信号：鼠标移动时发射时间戳与价格
     sig_mouse_moved_with_price = pyqtSignal(float, float)
+    # 绘图请求/删除/清空
+    sig_drawing_request = pyqtSignal(object)
+    sig_drawing_delete_request = pyqtSignal(int)
+    sig_drawing_clear_request = pyqtSignal()
     # 信号：周期改变时发射 (str)
     sig_period_changed = pyqtSignal(str)
     # 信号：请求分离/还原
@@ -230,6 +234,43 @@ class ChartWidget(QWidget):
             
         scroll_layout.addStretch()
         self.toolbar_layout.addWidget(scroll)
+
+        # 绘图工具按钮
+        self.btn_draw_select = QPushButton("Sel")
+        self.btn_draw_hline = QPushButton("H")
+        self.btn_draw_vline = QPushButton("V")
+        self.btn_draw_line = QPushButton("Line")
+        self.btn_draw_fib = QPushButton("Fib")
+        self.btn_draw_clear = QPushButton("Clear")
+        for btn in [self.btn_draw_select, self.btn_draw_hline, self.btn_draw_vline,
+                    self.btn_draw_line, self.btn_draw_fib, self.btn_draw_clear]:
+            btn.setFixedSize(44, 30)
+            btn.setStyleSheet("""
+                QPushButton {
+                    border: 1px solid #444;
+                    background-color: #222;
+                    color: #AAA;
+                    border-radius: 2px;
+                }
+                QPushButton:hover {
+                    background-color: #333;
+                    color: white;
+                }
+            """)
+
+        self.btn_draw_select.clicked.connect(lambda: self.set_draw_mode(None))
+        self.btn_draw_hline.clicked.connect(lambda: self.set_draw_mode("hline"))
+        self.btn_draw_vline.clicked.connect(lambda: self.set_draw_mode("vline"))
+        self.btn_draw_line.clicked.connect(lambda: self.set_draw_mode("line"))
+        self.btn_draw_fib.clicked.connect(lambda: self.set_draw_mode("fib"))
+        self.btn_draw_clear.clicked.connect(self.on_clear_drawings)
+
+        self.toolbar_layout.addWidget(self.btn_draw_select)
+        self.toolbar_layout.addWidget(self.btn_draw_hline)
+        self.toolbar_layout.addWidget(self.btn_draw_vline)
+        self.toolbar_layout.addWidget(self.btn_draw_line)
+        self.toolbar_layout.addWidget(self.btn_draw_fib)
+        self.toolbar_layout.addWidget(self.btn_draw_clear)
 
         # 分离按钮
         self.btn_detach = QPushButton("Pop")
@@ -416,6 +457,12 @@ class ChartWidget(QWidget):
         self.replay_start_action = self.ax.vb.menu.addAction("Set Replay Start")
         self.replay_start_action.triggered.connect(self.on_replay_start_action_triggered)
 
+        self.delete_drawing_action = self.ax.vb.menu.addAction("Delete Drawing")
+        self.delete_drawing_action.triggered.connect(self.on_delete_drawing_action)
+
+        self.clear_drawings_action = self.ax.vb.menu.addAction("Clear Drawings")
+        self.clear_drawings_action.triggered.connect(self.on_clear_drawings)
+
         # 缩放交互
         self.ax.setMouseEnabled(x=True, y=True)
         self.ax.getAxis('right').enableAutoSIPrefix(False)
@@ -442,6 +489,11 @@ class ChartWidget(QWidget):
         self.current_time_values = None
         self.measure_active = False
         self.measure_start_y = None
+        self.draw_mode = None
+        self.draw_first_point = None
+        self.draw_preview_items = []
+        self.drawings = {}
+        self.selected_drawing_id = None
         
         # 监听 Range 变化，用于动态切片加载
         self.update_timer = QTimer()
@@ -622,6 +674,18 @@ class ChartWidget(QWidget):
         if self.ax.sceneBoundingRect().contains(pos):
             mousePoint = self.ax.vb.mapSceneToView(pos)
 
+            # 绘图预览
+            if self.draw_mode in ("line", "fib") and self.draw_first_point is not None:
+                x0, y0 = self.draw_first_point
+                self._clear_preview()
+                preview = pg.PlotCurveItem(
+                    x=[x0, mousePoint.x()],
+                    y=[y0, mousePoint.y()],
+                    pen=pg.mkPen("#888888", width=1, style=Qt.PenStyle.DotLine),
+                )
+                self.ax.addItem(preview)
+                self.draw_preview_items.append(preview)
+
             mods = QApplication.keyboardModifiers()
             buttons = QApplication.mouseButtons()
             ctrl_down = bool(mods & Qt.KeyboardModifier.ControlModifier)
@@ -716,6 +780,22 @@ class ChartWidget(QWidget):
         event = evt[0]
         self.last_click_scene_pos = event.scenePos()
 
+        # 选择绘图对象
+        items = self.ax.scene().items(event.scenePos())
+        sel_id = None
+        for it in items:
+            try:
+                if it.data(0) == "drawing":
+                    sel_id = it.data(1)
+                    break
+            except Exception:
+                continue
+        self.selected_drawing_id = sel_id
+
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self.draw_mode:
+                self._handle_draw_click(event.scenePos())
+
     def on_sync_action_triggered(self):
         if self.last_click_scene_pos is None or self.current_df is None:
             return
@@ -736,6 +816,139 @@ class ChartWidget(QWidget):
         
         if dt:
             self.sig_set_replay_start.emit(dt)
+
+    def on_delete_drawing_action(self):
+        if self.selected_drawing_id is not None:
+            self.sig_drawing_delete_request.emit(int(self.selected_drawing_id))
+
+    def on_clear_drawings(self):
+        self.sig_drawing_clear_request.emit()
+
+    def set_draw_mode(self, mode):
+        self.draw_mode = mode
+        self.draw_first_point = None
+        self._clear_preview()
+
+    def _clear_preview(self):
+        for it in self.draw_preview_items:
+            try:
+                self.ax.removeItem(it)
+            except Exception:
+                pass
+        self.draw_preview_items = []
+
+    def _handle_draw_click(self, scene_pos):
+        mouse_point = self.ax.vb.mapSceneToView(scene_pos)
+        if self.draw_mode in ("hline", "vline"):
+            spec = {
+                "type": self.draw_mode,
+                "p1_dt": self.get_datetime_from_x(mouse_point.x()),
+                "p1_price": float(mouse_point.y()),
+            }
+            self.sig_drawing_request.emit(spec)
+            self.set_draw_mode(None)
+            return
+
+        if self.draw_mode in ("line", "fib"):
+            if self.draw_first_point is None:
+                self.draw_first_point = (mouse_point.x(), mouse_point.y())
+                return
+            x0, y0 = self.draw_first_point
+            dt0 = self.get_datetime_from_x(x0)
+            dt1 = self.get_datetime_from_x(mouse_point.x())
+            spec = {
+                "type": self.draw_mode,
+                "p1_dt": dt0,
+                "p1_price": float(y0),
+                "p2_dt": dt1,
+                "p2_price": float(mouse_point.y()),
+            }
+            self.sig_drawing_request.emit(spec)
+            self.set_draw_mode(None)
+            return
+
+    def add_drawing(self, spec):
+        draw_id = spec.get("id")
+        if draw_id is None:
+            return
+        dtype = spec.get("type")
+        p1_dt = spec.get("p1_dt")
+        p1_price = spec.get("p1_price")
+        p2_dt = spec.get("p2_dt")
+        p2_price = spec.get("p2_price")
+
+        items = []
+        if dtype == "hline":
+            line = pg.InfiniteLine(angle=0, pos=p1_price, pen=pg.mkPen("#FF4444", width=1))
+            self.ax.addItem(line)
+            line.setData(0, "drawing")
+            line.setData(1, draw_id)
+            items.append(line)
+        elif dtype == "vline":
+            x1 = self._x_from_datetime(p1_dt)
+            if x1 is not None:
+                line = pg.InfiniteLine(angle=90, pos=x1, pen=pg.mkPen("#FF4444", width=1))
+                self.ax.addItem(line)
+                line.setData(0, "drawing")
+                line.setData(1, draw_id)
+                items.append(line)
+        elif dtype == "line":
+            x1 = self._x_from_datetime(p1_dt)
+            x2 = self._x_from_datetime(p2_dt)
+            if x1 is not None and x2 is not None:
+                curve = pg.PlotCurveItem(x=[x1, x2], y=[p1_price, p2_price], pen=pg.mkPen("#FF4444", width=1))
+                self.ax.addItem(curve)
+                curve.setData(0, "drawing")
+                curve.setData(1, draw_id)
+                items.append(curve)
+        elif dtype == "fib":
+            x1 = self._x_from_datetime(p1_dt)
+            x2 = self._x_from_datetime(p2_dt)
+            if x1 is not None and x2 is not None:
+                y_high = p1_price
+                y_low = p2_price
+                if y_low > y_high:
+                    y_high, y_low = y_low, y_high
+                levels = [0.382, 0.5, 0.618, 0.8]
+                for lv in levels:
+                    y = y_low + (y_high - y_low) * lv
+                    curve = pg.PlotCurveItem(x=[x1, x2], y=[y, y], pen=pg.mkPen("#FF4444", width=1, style=Qt.PenStyle.DashLine))
+                    self.ax.addItem(curve)
+                    curve.setData(0, "drawing")
+                    curve.setData(1, draw_id)
+                    items.append(curve)
+
+        if items:
+            self.drawings[draw_id] = items
+
+    def remove_drawing(self, draw_id):
+        items = self.drawings.pop(draw_id, [])
+        for it in items:
+            try:
+                self.ax.removeItem(it)
+            except Exception:
+                pass
+        if self.selected_drawing_id == draw_id:
+            self.selected_drawing_id = None
+
+    def clear_drawings(self):
+        for draw_id in list(self.drawings.keys()):
+            self.remove_drawing(draw_id)
+
+    def _x_from_datetime(self, dt):
+        if dt is None or self.full_df is None or self.full_df.empty:
+            return None
+        ts = pd.Timestamp(dt)
+        if self.full_df.index.tz is None and ts.tzinfo is not None:
+            ts = ts.tz_convert("America/New_York").tz_localize(None)
+        elif self.full_df.index.tz is not None and ts.tzinfo is None:
+            ts = ts.tz_localize(self.full_df.index.tz)
+        idx = int(self.full_df.index.searchsorted(ts))
+        if idx < 0:
+            idx = 0
+        if idx >= len(self.full_df):
+            idx = len(self.full_df) - 1
+        return idx
 
     def get_datetime_from_x(self, x_val):
         """根据 X 轴坐标 (Index) 获取时间，支持外推"""
@@ -1104,6 +1317,9 @@ class MainWindow(QWidget):
             
             # 连接光标同步信号
             chart.sig_mouse_moved_with_price.connect(self.sync_all_charts_crosshair)
+            chart.sig_drawing_request.connect(self.on_drawing_request)
+            chart.sig_drawing_delete_request.connect(self.on_drawing_delete)
+            chart.sig_drawing_clear_request.connect(self.on_drawing_clear)
             self.charts.append(chart)
 
     def set_replay_start_time(self, target_dt):
@@ -1192,6 +1408,22 @@ class MainWindow(QWidget):
     def sync_all_charts_crosshair(self, timestamp, price):
         for chart in self.charts:
             chart.sync_crosshair(timestamp, price)
+
+    def on_drawing_request(self, spec):
+        draw_id = getattr(self, "_drawing_id_counter", 0) + 1
+        self._drawing_id_counter = draw_id
+        spec = dict(spec)
+        spec["id"] = draw_id
+        for chart in self.charts:
+            chart.add_drawing(spec)
+
+    def on_drawing_delete(self, draw_id):
+        for chart in self.charts:
+            chart.remove_drawing(draw_id)
+
+    def on_drawing_clear(self):
+        for chart in self.charts:
+            chart.clear_drawings()
 
     def create_control_panel(self):
         panel = QHBoxLayout()
