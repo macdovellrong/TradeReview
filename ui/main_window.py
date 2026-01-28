@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QScrollArea, QButtonGroup, QApplication)
+                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QScrollArea, QButtonGroup, QApplication, QSizePolicy)
 from PyQt6.QtGui import QAction, QPainter, QPicture
 from PyQt6.QtCore import Qt, QTimer, QDateTime, pyqtSignal, QSize
 from engine.data_engine import DataEngine
@@ -166,6 +166,8 @@ class ChartWidget(QWidget):
 
     def __init__(self, name="Chart", parent=None):
         super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Expanding)
         self.layout = QVBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self.layout)
@@ -663,6 +665,15 @@ class ChartWidget(QWidget):
                 self.rsi_items['RSI_20'] = line20
                 self.rsi_items['RSI_80'] = line80
             self.ax_rsi.setYRange(0, 100, padding=0)
+        else:
+            # clear stale RSI drawings if new data lacks RSI columns
+            if self.rsi_items:
+                for item in self.rsi_items.values():
+                    try:
+                        self.ax_rsi.removeItem(item)
+                    except Exception:
+                        pass
+                self.rsi_items = {}
 
         # View limits
         self.ax.vb.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
@@ -784,12 +795,10 @@ class ChartWidget(QWidget):
         items = self.ax.scene().items(event.scenePos())
         sel_id = None
         for it in items:
-            try:
-                if it.data(0) == "drawing":
-                    sel_id = it.data(1)
+            if getattr(it, "_is_drawing", False):
+                sel_id = getattr(it, "_drawing_id", None)
+                if sel_id is not None:
                     break
-            except Exception:
-                continue
         self.selected_drawing_id = sel_id
 
         if event.button() == Qt.MouseButton.LeftButton:
@@ -881,16 +890,16 @@ class ChartWidget(QWidget):
         if dtype == "hline":
             line = pg.InfiniteLine(angle=0, pos=p1_price, pen=pg.mkPen("#FF4444", width=1))
             self.ax.addItem(line)
-            line.setData(0, "drawing")
-            line.setData(1, draw_id)
+            line._is_drawing = True
+            line._drawing_id = draw_id
             items.append(line)
         elif dtype == "vline":
             x1 = self._x_from_datetime(p1_dt)
             if x1 is not None:
                 line = pg.InfiniteLine(angle=90, pos=x1, pen=pg.mkPen("#FF4444", width=1))
                 self.ax.addItem(line)
-                line.setData(0, "drawing")
-                line.setData(1, draw_id)
+                line._is_drawing = True
+                line._drawing_id = draw_id
                 items.append(line)
         elif dtype == "line":
             x1 = self._x_from_datetime(p1_dt)
@@ -898,8 +907,8 @@ class ChartWidget(QWidget):
             if x1 is not None and x2 is not None:
                 curve = pg.PlotCurveItem(x=[x1, x2], y=[p1_price, p2_price], pen=pg.mkPen("#FF4444", width=1))
                 self.ax.addItem(curve)
-                curve.setData(0, "drawing")
-                curve.setData(1, draw_id)
+                curve._is_drawing = True
+                curve._drawing_id = draw_id
                 items.append(curve)
         elif dtype == "fib":
             x1 = self._x_from_datetime(p1_dt)
@@ -914,8 +923,8 @@ class ChartWidget(QWidget):
                     y = y_low + (y_high - y_low) * lv
                     curve = pg.PlotCurveItem(x=[x1, x2], y=[y, y], pen=pg.mkPen("#FF4444", width=1, style=Qt.PenStyle.DashLine))
                     self.ax.addItem(curve)
-                    curve.setData(0, "drawing")
-                    curve.setData(1, draw_id)
+                    curve._is_drawing = True
+                    curve._drawing_id = draw_id
                     items.append(curve)
 
         if items:
@@ -1553,14 +1562,20 @@ class MainWindow(QWidget):
         elif layout_name == "Grid 2x2":
             grid_widget = QWidget()
             grid = QGridLayout()
+            grid.setContentsMargins(0, 0, 0, 0)
+            grid.setSpacing(2)
             grid_widget.setLayout(grid)
-            
+
             # Simple grid logic for dynamic number of charts
             for i, chart in enumerate(active_charts):
                 row = i // 2
                 col = i % 2
                 grid.addWidget(chart, row, col)
                 chart.show()
+            grid.setRowStretch(0, 1)
+            grid.setRowStretch(1, 1)
+            grid.setColumnStretch(0, 1)
+            grid.setColumnStretch(1, 1)
             
             self.chart_container_layout.addWidget(grid_widget)
             
