@@ -13,6 +13,7 @@ data/
 *.db
 *.sqlite
 data/**/*.csv
+data/**/*.parquet
 data/**/*.duckdb
 data/**/*.db
 data/**/*.sqlite
