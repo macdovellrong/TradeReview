@@ -8,6 +8,12 @@ import pandas as pd
 
 def _should_dropna(timeframe):
     tf = str(timeframe).strip().lower()
+    if tf.endswith("s"):
+        try:
+            int(tf[:-1])
+        except ValueError:
+            return True
+        return False
     if tf.endswith("min"):
         try:
             minutes = int(tf[:-3])
@@ -27,9 +33,27 @@ def _should_dropna(timeframe):
 
 def _should_filter_by_calendar(timeframe):
     tf = str(timeframe).strip().lower()
-    if tf.endswith("min") or tf.endswith("h"):
+    if tf.endswith("s") or tf.endswith("min") or tf.endswith("h"):
         return True
     return False
+
+
+def _table_suffix_from_timeframe(timeframe):
+    tf = str(timeframe).strip()
+    tf_l = tf.lower()
+    if tf_l.endswith("s") and tf_l[:-1].isdigit():
+        return f"{tf_l[:-1]}s"
+    if tf_l.endswith("min") and tf_l[:-3].isdigit():
+        return f"{tf_l[:-3]}m"
+    if tf_l.endswith("h") and tf_l[:-1].isdigit():
+        return f"{tf_l[:-1]}h"
+    if tf_l.endswith("d") and tf_l[:-1].isdigit():
+        return f"{tf_l[:-1]}D"
+    if tf_l.endswith("w") and tf_l[:-1].isdigit():
+        return f"{tf_l[:-1]}W"
+    if tf.endswith("M") and tf[:-1].isdigit():
+        return f"{tf[:-1]}M"
+    return tf
 
 
 def _normalize_timeframe(timeframe):
@@ -114,7 +138,7 @@ def _filter_index_by_calendar(full_index, timeframe):
 
 
 def _calculate_indicators(df):
-    for span in [20, 30, 40, 50, 60]:
+    for span in [20, 30, 40, 50, 60, 100, 240]:
         df[f"EMA{span}"] = df["close"].ewm(span=span, adjust=False).mean()
 
     sma20 = df["close"].rolling(window=20).mean()
@@ -170,7 +194,7 @@ def main():
     parser.add_argument("--db", default="data/candles.duckdb", help="Output DuckDB file path")
     parser.add_argument(
         "--periods",
-        default="1min,5min,15min,30min,45min,1h,2h,3h,4h,6h,8h,12h,1D",
+        default="30s,1min,2min,3min,5min,10min,15min,20min,30min,45min,90min,1h,2h,3h,4h,6h,8h,12h,1D,1W,1M",
         help="Comma-separated periods",
     )
     args = parser.parse_args()
@@ -212,7 +236,7 @@ def main():
             candles = candles.rename(columns={"time": "timestamp"})
         if "timestamp" not in candles.columns and "datetime" in candles.columns:
             candles = candles.rename(columns={"datetime": "timestamp"})
-        table = f"candles_{tf.replace('min','m').replace('h','h').replace('D','D')}"
+        table = f"candles_{_table_suffix_from_timeframe(tf)}"
         con.register("candles_df", candles)
         con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM candles_df")
         con.unregister("candles_df")

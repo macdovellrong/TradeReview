@@ -68,7 +68,9 @@ class DataEngine:
 
     def _duckdb_table_for_timeframe(self, timeframe):
         tf = str(timeframe).strip().lower()
-        if tf.endswith("min"):
+        if tf.endswith("s"):
+            suffix = tf
+        elif tf.endswith("min"):
             suffix = f"{tf[:-3]}m"
         elif tf.endswith("h"):
             suffix = tf
@@ -262,14 +264,18 @@ class DataEngine:
         df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
         df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
 
-        # RSI (14)
+        # RSI (6/12/24 + 14)
         delta = df['close'].diff()
         gain = delta.where(delta > 0, 0.0)
         loss = -delta.where(delta < 0, 0.0)
-        avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
-        avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
-        rs = avg_gain / avg_loss.replace(0, np.nan)
-        df['RSI'] = 100 - (100 / (1 + rs))
+        for rsi_len in [6, 12, 24, 14]:
+            avg_gain = gain.ewm(alpha=1/rsi_len, adjust=False).mean()
+            avg_loss = loss.ewm(alpha=1/rsi_len, adjust=False).mean()
+            rs = avg_gain / avg_loss.replace(0, np.nan)
+            if rsi_len == 14:
+                df['RSI'] = 100 - (100 / (1 + rs))
+            else:
+                df[f'RSI{rsi_len}'] = 100 - (100 / (1 + rs))
 
         return df
 

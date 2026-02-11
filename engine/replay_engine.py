@@ -9,6 +9,7 @@ class ReplayEngine:
         self.max_count_map = {}
         self.max_ticks_per_frame = max_ticks_per_frame
         self.auto_skip_gaps = True
+        self.indicator_tail = 300
         self.periods = []
         self.states = {}
         self.tick_pos = 0
@@ -68,6 +69,14 @@ class ReplayEngine:
         l = list(state["completed_low"])
         c = list(state["completed_close"])
         v = list(state["completed_volume"])
+        indicator_cols = state.get("indicator_cols", [])
+        completed_indicators = state.get("completed_indicators", {})
+        indicator_data = {}
+        for col in indicator_cols:
+            values = list(completed_indicators.get(col, []))
+            if len(values) < len(idx):
+                values.extend([np.nan] * (len(idx) - len(values)))
+            indicator_data[col] = values
 
         if state["cur_start"] is not None:
             idx.append(state["cur_start"])
@@ -76,18 +85,21 @@ class ReplayEngine:
             l.append(state["cur_low"])
             c.append(state["cur_close"])
             v.append(state["cur_volume"])
+            if with_indicators and indicator_cols:
+                cur_indicators = self._calc_current_indicators(state)
+                for col in indicator_cols:
+                    indicator_data.setdefault(col, [np.nan] * (len(idx) - 1))
+                    indicator_data[col].append(cur_indicators.get(col, np.nan))
 
         if len(idx) == 0:
             return None
 
-        df = pd.DataFrame(
-            {"open": o, "close": c, "high": h, "low": l, "volume": v},
-            index=pd.to_datetime(idx),
-        )
+        data = {"open": o, "close": c, "high": h, "low": l, "volume": v}
+        if with_indicators and indicator_cols:
+            data.update(indicator_data)
+        df = pd.DataFrame(data, index=pd.to_datetime(idx))
         if count is not None:
             df = df.tail(count)
-        if with_indicators:
-            df = self.engine._calculate_indicators(df)
         return df
 
     def _build_tick_arrays(self):
@@ -137,6 +149,12 @@ class ReplayEngine:
             completed_low = list(completed["low"].to_numpy(dtype=np.float64))
             completed_close = list(completed["close"].to_numpy(dtype=np.float64))
             completed_volume = list(completed["volume"].to_numpy(dtype=np.float64))
+            indicator_cols = [col for col in df_full.columns if col not in {"open", "high", "low", "close", "volume"}]
+            completed_indicators = {}
+            indicator_full = {}
+            for col in indicator_cols:
+                indicator_full[col] = df_full[col].to_numpy()
+                completed_indicators[col] = list(completed[col].to_numpy())
 
             cur_start = period_values[pos] if len(period_values) > 0 else None
             cur_open = np.nan
@@ -171,6 +189,9 @@ class ReplayEngine:
                 "completed_low": completed_low,
                 "completed_close": completed_close,
                 "completed_volume": completed_volume,
+                "indicator_cols": indicator_cols,
+                "completed_indicators": completed_indicators,
+                "indicator_full": indicator_full,
                 "cur_start": cur_start,
                 "cur_open": cur_open,
                 "cur_high": cur_high,
@@ -193,13 +214,13 @@ class ReplayEngine:
             return
 
         # Finalize current candle.
-        self._append_completed(state, state["cur_start"], state["cur_open"],
+        self._append_completed(state, state["pos"], state["cur_start"], state["cur_open"],
                                state["cur_high"], state["cur_low"],
                                state["cur_close"], state["cur_volume"])
 
         # Fill skipped candles (no ticks).
         for pos in range(state["pos"] + 1, target_pos):
-            self._append_completed(state, period_values[pos], np.nan, np.nan, np.nan, np.nan, 0.0)
+            self._append_completed(state, pos, period_values[pos], np.nan, np.nan, np.nan, np.nan, 0.0)
 
         state["pos"] = target_pos
         state["cur_start"] = period_values[target_pos]
@@ -225,13 +246,25 @@ class ReplayEngine:
         state["cur_close"] = price
         state["cur_volume"] += volume
 
-    def _append_completed(self, state, ts, o, h, l, c, v):
+    def _append_completed(self, state, pos, ts, o, h, l, c, v):
         state["completed_index"].append(ts)
         state["completed_open"].append(o)
         state["completed_high"].append(h)
         state["completed_low"].append(l)
         state["completed_close"].append(c)
         state["completed_volume"].append(v)
+        indicator_cols = state.get("indicator_cols", [])
+        completed_indicators = state.get("completed_indicators", {})
+        indicator_full = state.get("indicator_full", {})
+        for col in indicator_cols:
+            values = completed_indicators.setdefault(col, [])
+            if pos is not None and col in indicator_full:
+                try:
+                    values.append(indicator_full[col][pos])
+                except Exception:
+                    values.append(np.nan)
+            else:
+                values.append(np.nan)
         max_count = state.get("max_count", self.max_count)
         if len(state["completed_index"]) > max_count:
             state["completed_index"].pop(0)
@@ -240,9 +273,38 @@ class ReplayEngine:
             state["completed_low"].pop(0)
             state["completed_close"].pop(0)
             state["completed_volume"].pop(0)
+            for col in indicator_cols:
+                if completed_indicators.get(col):
+                    completed_indicators[col].pop(0)
 
     def _to_naive(self, dt):
         ts = pd.Timestamp(dt)
         if ts.tzinfo is None:
             return ts
         return ts.tz_convert("America/New_York").tz_localize(None)
+
+    def _calc_current_indicators(self, state):
+        indicator_cols = state.get("indicator_cols", [])
+        if not indicator_cols:
+            return {}
+        tail_len = min(len(state["completed_index"]), self.indicator_tail)
+        if tail_len <= 0:
+            return {}
+
+        idx = list(state["completed_index"][-tail_len:])
+        idx.append(state["cur_start"])
+        o = list(state["completed_open"][-tail_len:]) + [state["cur_open"]]
+        h = list(state["completed_high"][-tail_len:]) + [state["cur_high"]]
+        l = list(state["completed_low"][-tail_len:]) + [state["cur_low"]]
+        c = list(state["completed_close"][-tail_len:]) + [state["cur_close"]]
+        v = list(state["completed_volume"][-tail_len:]) + [state["cur_volume"]]
+
+        df = pd.DataFrame(
+            {"open": o, "close": c, "high": h, "low": l, "volume": v},
+            index=pd.to_datetime(idx),
+        )
+        df = self.engine._calculate_indicators(df)
+        if df.empty:
+            return {}
+        last = df.iloc[-1]
+        return {col: last.get(col, np.nan) for col in indicator_cols}

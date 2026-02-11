@@ -198,11 +198,12 @@ class ChartWidget(QWidget):
         
         # 定义周期选项及其显示文本
         periods = [
-            ("1min", "1m"), ("2min", "2m"), ("3min", "3m"), ("5min", "5m"), 
-            ("10min", "10m"), ("15min", "15m"), ("30min", "30m"), ("45min", "45m"),
-            ("1h", "1h"), ("2h", "2h"), ("3h", "3h"), ("4h", "4h"), 
+            ("30s", "30s"),
+            ("1min", "1m"), ("2min", "2m"), ("3min", "3m"), ("5min", "5m"),
+            ("10min", "10m"), ("15min", "15m"), ("20min", "20m"), ("30min", "30m"), ("45min", "45m"), ("90min", "90m"),
+            ("1h", "1h"), ("2h", "2h"), ("3h", "3h"), ("4h", "4h"),
             ("6h", "6h"), ("8h", "8h"), ("12h", "12h"),
-            ("1D", "1D")
+            ("1D", "1D"), ("1W", "1W"), ("1M", "1M")
         ]
         
         self.period_map = {p[1]: p[0] for p in periods} # display -> actual
@@ -1254,6 +1255,14 @@ class MainWindow(QWidget):
 
     def _get_max_count_for_period(self, period):
         tf = str(period).strip().lower()
+        if tf.endswith("s"):
+            try:
+                seconds = int(tf[:-1])
+            except ValueError:
+                return 1500
+            if seconds <= 30:
+                return 6000
+            return 4000
         if tf.endswith("min"):
             try:
                 minutes = int(tf[:-3])
@@ -1280,6 +1289,14 @@ class MainWindow(QWidget):
 
     def _get_view_count_for_period(self, period):
         tf = str(period).strip().lower()
+        if tf.endswith("s"):
+            try:
+                seconds = int(tf[:-1])
+            except ValueError:
+                return 400
+            if seconds <= 30:
+                return 1200
+            return 800
         if tf.endswith("min"):
             try:
                 minutes = int(tf[:-3])
@@ -1470,7 +1487,7 @@ class MainWindow(QWidget):
         panel.addWidget(self.btn_step_forward)
 
         self.combo_step = QComboBox()
-        self.combo_step.addItems(["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D"])
+        self.combo_step.addItems(["30s", "1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D"])
         self.combo_step.setCurrentText("1h")
         panel.addWidget(self.combo_step)
         

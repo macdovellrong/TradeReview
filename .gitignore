@@ -7,3 +7,12 @@ __pycache__/
 *.png
 .vscode/
 data/
+
+# local data files (keep only on local machine)
+*.duckdb
+*.db
+*.sqlite
+data/**/*.csv
+data/**/*.duckdb
+data/**/*.db
+data/**/*.sqlite
