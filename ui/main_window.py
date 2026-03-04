@@ -238,6 +238,39 @@ class ChartWidget(QWidget):
         scroll_layout.addStretch()
         self.toolbar_layout.addWidget(scroll)
 
+        # EMA显示分组（可多选）
+        self.ema_toggle_buttons = {}
+        for span in [20, 30, 40, 50, 60, 100, 240]:
+            name = f"EMA{span}"
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            btn.setFixedSize(68, 30)
+            btn.setStyleSheet("""
+                QPushButton {
+                    border: 1px solid #444;
+                    background-color: #222;
+                    color: #AAA;
+                    border-radius: 2px;
+                }
+                QPushButton:checked {
+                    background-color: #007ACC;
+                    color: white;
+                    border: 1px solid #007ACC;
+                }
+                QPushButton:hover {
+                    background-color: #333;
+                }
+            """)
+            btn.toggled.connect(self.on_ema_toggle_changed)
+            self.toolbar_layout.addWidget(btn)
+            self.ema_toggle_buttons[name] = btn
+        # 保持旧行为：默认显示EMA20-60
+        for name in ["EMA20", "EMA30", "EMA40", "EMA50", "EMA60"]:
+            btn = self.ema_toggle_buttons[name]
+            btn.blockSignals(True)
+            btn.setChecked(True)
+            btn.blockSignals(False)
+
         # 绘图工具按钮
         self.btn_draw_select = QPushButton("Sel")
         self.btn_draw_hline = QPushButton("H")
@@ -562,11 +595,13 @@ class ChartWidget(QWidget):
         # Indicators
         ema_colors = {
             'EMA20': '#FF0000', 'EMA30': '#FF8800', 'EMA40': '#FFFF00',
-            'EMA50': '#00FF00', 'EMA60': '#0000FF'
+            'EMA50': '#00FF00', 'EMA60': '#0000FF',
+            'EMA100': '#00BFFF', 'EMA240': '#FF66CC'
         }
 
         for name, color in ema_colors.items():
-            if name in df.columns:
+            enabled = self._is_ema_enabled(name)
+            if enabled and name in df.columns:
                 y_data = df[name].to_numpy(dtype=np.float64)
 
                 if name not in self.indicator_items:
@@ -581,6 +616,9 @@ class ChartWidget(QWidget):
                     self.indicator_items[name] = curve
                 else:
                     self.indicator_items[name].setData(x=x_data, y=y_data)
+                    self.indicator_items[name].setVisible(True)
+            elif name in self.indicator_items:
+                self.indicator_items[name].setVisible(False)
 
         # Bollinger Bands
         bb_color = '#FFFFFF'
@@ -1062,6 +1100,20 @@ class ChartWidget(QWidget):
                 break
         
         self.sig_period_changed.emit(display)
+
+    def _is_ema_enabled(self, name):
+        btn = self.ema_toggle_buttons.get(name)
+        if btn is None:
+            return True
+        return btn.isChecked()
+
+    def on_ema_toggle_changed(self, _checked):
+        if not hasattr(self, "full_df") or self.full_df is None or self.full_df.empty:
+            return
+        # 强制重新切片刷新，立即应用EMA显隐
+        self._last_slice_start = -1
+        self._last_slice_end = -1
+        self.refresh_visible_view()
 
     def update_chart(self, df, auto_scale=False, highlight_idx=None):
         if df is None or df.empty:

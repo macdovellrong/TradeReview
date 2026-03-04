@@ -191,7 +191,7 @@ def build_candles(df_ticks, timeframe):
 def main():
     parser = argparse.ArgumentParser(description="Convert tick parquet to DuckDB with precomputed candles.")
     parser.add_argument("parquet", help="Tick parquet file path")
-    parser.add_argument("--db", default="data/candles.duckdb", help="Output DuckDB file path")
+    parser.add_argument("--db", default=None, help="Output DuckDB file path (defaults to input file stem with .duckdb)")
     parser.add_argument(
         "--periods",
         default="30s,1min,2min,3min,5min,10min,15min,20min,30min,45min,90min,1h,2h,3h,4h,6h,8h,12h,1D,1W,1M",
@@ -201,6 +201,9 @@ def main():
 
     parquet_path = args.parquet
     db_path = args.db
+    if not db_path:
+        base, _ = os.path.splitext(parquet_path)
+        db_path = f"{base}.duckdb"
     periods = [p.strip() for p in args.periods.split(",") if p.strip()]
 
     print(f"Loading ticks from {parquet_path} ...")
@@ -247,3 +250,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

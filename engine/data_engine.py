@@ -115,6 +115,11 @@ class DataEngine:
                     if "timestamp" in df.columns:
                         df["timestamp"] = pd.to_datetime(df["timestamp"])
                         df.set_index("timestamp", inplace=True)
+                    # Backward compatibility: old DuckDB may miss newly added EMA columns.
+                    for span in [100, 240]:
+                        col = f"EMA{span}"
+                        if col not in df.columns and "close" in df.columns:
+                            df[col] = df["close"].ewm(span=span, adjust=False).mean()
                     self._candles_cache[timeframe] = df
                     return df
                 except Exception as e:
@@ -246,7 +251,7 @@ class DataEngine:
     def _calculate_indicators(self, df):
         """计算 EMA 和 布林带"""
         # EMA
-        for span in [20, 30, 40, 50, 60]:
+        for span in [20, 30, 40, 50, 60, 100, 240]:
             df[f'EMA{span}'] = df['close'].ewm(span=span, adjust=False).mean()
         
         # Bollinger Bands (20, 2)
