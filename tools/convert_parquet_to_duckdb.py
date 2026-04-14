@@ -8,6 +8,9 @@ import pandas as pd
 
 def _should_dropna(timeframe):
     tf = str(timeframe).strip().lower()
+    if tf.endswith("me"):
+        base = tf[:-2]
+        return base.isdigit()
     if tf.endswith("s"):
         try:
             int(tf[:-1])
@@ -52,7 +55,8 @@ def _table_suffix_from_timeframe(timeframe):
     if tf_l.endswith("w") and tf_l[:-1].isdigit():
         return f"{tf_l[:-1]}W"
     if tf.endswith("M") and tf[:-1].isdigit():
-        return f"{tf[:-1]}M"
+        # DuckDB identifiers are case-insensitive, so "1M" would collide with "1m".
+        return f"{tf[:-1]}mo"
     return tf
 
 
@@ -102,7 +106,7 @@ def _filter_index_by_calendar(full_index, timeframe):
 
     try:
         offset = pd.tseries.frequencies.to_offset(timeframe)
-        freq_delta = offset.delta
+        freq_delta = pd.Timedelta(offset)
     except Exception:
         return full_index
     if freq_delta is None:
@@ -117,13 +121,19 @@ def _filter_index_by_calendar(full_index, timeframe):
     if schedule is None or schedule.empty:
         return full_index
 
-    try:
-        schedule = schedule.tz_convert("America/New_York")
-    except Exception:
-        schedule = schedule.tz_localize("America/New_York")
+    opens = schedule["market_open"]
+    closes = schedule["market_close"]
+    if opens.dt.tz is None:
+        opens = opens.dt.tz_localize("America/New_York")
+    else:
+        opens = opens.dt.tz_convert("America/New_York")
+    if closes.dt.tz is None:
+        closes = closes.dt.tz_localize("America/New_York")
+    else:
+        closes = closes.dt.tz_convert("America/New_York")
 
-    opens = schedule["market_open"].dt.tz_localize(None)
-    closes = schedule["market_close"].dt.tz_localize(None)
+    opens = opens.dt.tz_localize(None)
+    closes = closes.dt.tz_localize(None)
 
     mask = np.zeros(len(full_index), dtype=bool)
     for open_ts, close_ts in zip(opens, closes):
@@ -183,6 +193,9 @@ def build_candles(df_ticks, timeframe):
 
     if _should_dropna(timeframe):
         df_candles.dropna(inplace=True)
+    else:
+        # Keep only populated bars so we do not write maintenance-gap rows with carried indicators.
+        df_candles = df_candles.loc[df_candles["open"].notna()].copy()
 
     df_candles = _calculate_indicators(df_candles)
     return df_candles

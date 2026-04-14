@@ -1,15 +1,24 @@
-import finplot as fplt
-import pandas as pd
-import numpy as np
-import pyqtgraph as pg
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QScrollArea, QButtonGroup, QApplication, QSizePolicy)
-from PyQt6.QtGui import QAction, QPainter, QPicture
-from PyQt6.QtCore import Qt, QTimer, QDateTime, pyqtSignal, QSize
-from engine.data_engine import DataEngine
-from engine.replay_engine import ReplayEngine
 import datetime
 import os
+from functools import partial
+
+import finplot as fplt
+import numpy as np
+import pandas as pd
+import pyqtgraph as pg
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
+                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QScrollArea, QButtonGroup, QApplication, QSizePolicy, QMessageBox)
+from PyQt6.QtGui import QAction, QPainter, QPicture
+from PyQt6.QtCore import Qt, QTimer, QDateTime, QSettings, pyqtSignal, QSize
+from engine.data_engine import DataEngine
+from engine.replay_engine import ReplayEngine
+from ui.chart_performance import (
+    build_visible_slice_window,
+    get_crosshair_sync_targets,
+    should_refresh_visible_slice,
+)
+from ui.session_state import SessionState, load_session_state, save_session_state
+from ui.time_navigation import clamp_timestamp, normalize_jump_timestamp, resolve_chart_target
 
 # ... (Keep MockYScale and TimeAxisItem as is) ...
 
@@ -27,12 +36,12 @@ class TimeAxisItem(pg.AxisItem):
     def set_datetime_index(self, dt_index):
         self._dt_index = dt_index
         if len(dt_index) > 1:
-            # 计算步长：取前 10 个点的差值的中位数，以防数据开头有缺口
+            # 璁＄畻姝ラ暱锛氬彇鍓?10 涓偣鐨勫樊鍊肩殑涓綅鏁帮紝浠ラ槻鏁版嵁寮€澶存湁缂哄彛
             count = min(10, len(dt_index) - 1)
             deltas = []
             for i in range(count):
                 deltas.append(dt_index[i+1] - dt_index[i])
-            # 简单的取中位数
+            # 绠€鍗曠殑鍙栦腑浣嶆暟
             deltas.sort()
             self._delta = deltas[len(deltas) // 2]
         else:
@@ -85,10 +94,7 @@ class TimeAxisItem(pg.AxisItem):
                 dt = self._dt_index[0] + self._delta * diff
             out.append(dt.strftime('%m-%d %H:%M'))
         
-        # 调试：打印前几个刻度的映射情况 (仅当 values 包含较小索引时)
-        if any(v < 5 for v in values) and len(out) > 0:
-            print(f"Tick Debug: Values={values[:3]}, Strings={out[:3]}")
-            
+        # 璋冭瘯锛氭墦鍗板墠鍑犱釜鍒诲害鐨勬槧灏勬儏鍐?(浠呭綋 values 鍖呭惈杈冨皬绱㈠紩鏃?
         return out
 
 class CandlestickItem(pg.GraphicsObject):
@@ -145,23 +151,24 @@ class CandlestickItem(pg.GraphicsObject):
             return pg.QtCore.QRectF()
         return pg.QtCore.QRectF(self._picture.boundingRect())
 
-# 封装单个图表窗口
+# 灏佽鍗曚釜鍥捐〃绐楀彛
 class ChartWidget(QWidget):
-    # 定义信号：鼠标移动时发射当前的时间戳 (float)
+    # 瀹氫箟淇″彿锛氶紶鏍囩Щ鍔ㄦ椂鍙戝皠褰撳墠鐨勬椂闂存埑 (float)
     sig_mouse_moved = pyqtSignal(float)
-    # 定义信号：鼠标移动时发射时间戳与价格
+    # 瀹氫箟淇″彿锛氶紶鏍囩Щ鍔ㄦ椂鍙戝皠鏃堕棿鎴充笌浠锋牸
     sig_mouse_moved_with_price = pyqtSignal(float, float)
-    # 绘图请求/删除/清空
+    # 缁樺浘璇锋眰/鍒犻櫎/娓呯┖
     sig_drawing_request = pyqtSignal(object)
     sig_drawing_delete_request = pyqtSignal(int)
     sig_drawing_clear_request = pyqtSignal()
-    # 信号：周期改变时发射 (str)
+    # 淇″彿锛氬懆鏈熸敼鍙樻椂鍙戝皠 (str)
     sig_period_changed = pyqtSignal(str)
-    # 信号：请求分离/还原
+    # 淇″彿锛氳姹傚垎绂?杩樺師
     sig_detach_requested = pyqtSignal(object)
-    # 信号：请求同步所有图表中心点 (datetime)
+    # 淇″彿锛氳姹傚悓姝ユ墍鏈夊浘琛ㄤ腑蹇冪偣 (datetime)
     sig_sync_center_requested = pyqtSignal(object)
-    # 信号：设置回放开始时间 (datetime)
+    sig_sync_y_center_requested = pyqtSignal(float)
+    # 淇″彿锛氳缃洖鏀惧紑濮嬫椂闂?(datetime)
     sig_set_replay_start = pyqtSignal(object)
 
     def __init__(self, name="Chart", parent=None):
@@ -172,14 +179,14 @@ class ChartWidget(QWidget):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self.layout)
         
-        # 顶部工具条 (周期选择)
+        # 椤堕儴宸ュ叿鏉?(鍛ㄦ湡閫夋嫨)
         self.toolbar_layout = QHBoxLayout()
         self.toolbar_layout.setContentsMargins(0, 0, 0, 0)
         self.toolbar_layout.setSpacing(0)
         
-        # 使用 ScrollArea 来容纳众多按钮
+        # 浣跨敤 ScrollArea 鏉ュ绾充紬澶氭寜閽?
         scroll = QScrollArea()
-        scroll.setFixedHeight(40) # 固定高度
+        scroll.setFixedHeight(40) # 鍥哄畾楂樺害
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -196,7 +203,7 @@ class ChartWidget(QWidget):
         self.btn_group.setExclusive(True)
         self.btn_group.buttonClicked.connect(self.on_btn_period_clicked)
         
-        # 定义周期选项及其显示文本
+        # 瀹氫箟鍛ㄦ湡閫夐」鍙婂叾鏄剧ず鏂囨湰
         periods = [
             ("30s", "30s"),
             ("1min", "1m"), ("2min", "2m"), ("3min", "3m"), ("5min", "5m"),
@@ -212,7 +219,7 @@ class ChartWidget(QWidget):
         for actual, display in periods:
             btn = QPushButton(display)
             btn.setCheckable(True)
-            btn.setFixedSize(40, 30) # 小按钮
+            btn.setFixedSize(40, 30) # 灏忔寜閽?
             btn.setStyleSheet("""
                 QPushButton {
                     border: 1px solid #444;
@@ -232,13 +239,13 @@ class ChartWidget(QWidget):
             self.btn_group.addButton(btn)
             scroll_layout.addWidget(btn)
             
-            # 存储实际周期值
+            # 瀛樺偍瀹為檯鍛ㄦ湡鍊?
             btn.setProperty("period", actual)
             
         scroll_layout.addStretch()
         self.toolbar_layout.addWidget(scroll)
 
-        # EMA显示分组（可多选）
+        # EMA鏄剧ず鍒嗙粍锛堝彲澶氶€夛級
         self.ema_toggle_buttons = {}
         for span in [20, 30, 40, 50, 60, 100, 240]:
             name = f"EMA{span}"
@@ -264,14 +271,14 @@ class ChartWidget(QWidget):
             btn.toggled.connect(self.on_ema_toggle_changed)
             self.toolbar_layout.addWidget(btn)
             self.ema_toggle_buttons[name] = btn
-        # 保持旧行为：默认显示EMA20-60
+        # 淇濇寔鏃ц涓猴細榛樿鏄剧ずEMA20-60
         for name in ["EMA20", "EMA30", "EMA40", "EMA50", "EMA60"]:
             btn = self.ema_toggle_buttons[name]
             btn.blockSignals(True)
             btn.setChecked(True)
             btn.blockSignals(False)
 
-        # 绘图工具按钮
+        # 缁樺浘宸ュ叿鎸夐挳
         self.btn_draw_select = QPushButton("Sel")
         self.btn_draw_hline = QPushButton("H")
         self.btn_draw_vline = QPushButton("V")
@@ -308,7 +315,7 @@ class ChartWidget(QWidget):
         self.toolbar_layout.addWidget(self.btn_draw_fib)
         self.toolbar_layout.addWidget(self.btn_draw_clear)
 
-        # 分离按钮
+        # 鍒嗙鎸夐挳
         self.btn_detach = QPushButton("Pop")
         self.btn_detach.setFixedSize(40, 30)
         self.btn_detach.setStyleSheet("""
@@ -330,7 +337,7 @@ class ChartWidget(QWidget):
         
         self.is_detached = False
         
-        # Finplot 画布嵌入逻辑
+        # Finplot 鐢诲竷宓屽叆閫昏緫
         self.glw = pg.GraphicsLayoutWidget()
         self.layout.addWidget(self.glw)
         
@@ -365,9 +372,9 @@ class ChartWidget(QWidget):
             pass
         self.ax.vb.update_y_zoom = update_y_zoom
 
-        # 自定义滚轮逻辑
+        # 鑷畾涔夋粴杞€昏緫
         def custom_wheel_event(ev, axis=None):
-            # 1. 获取滚动增量
+            # 1. 鑾峰彇婊氬姩澧為噺
             if hasattr(ev, 'angleDelta'):
                 delta = ev.angleDelta().y()
             else:
@@ -376,20 +383,20 @@ class ChartWidget(QWidget):
             if delta == 0:
                 return
                 
-            # 2. 计算缩放系数 (值越接近 1.0，缩放越慢)
+            # 2. 璁＄畻缂╂斁绯绘暟 (鍊艰秺鎺ヨ繎 1.0锛岀缉鏀捐秺鎱?
             s_x = 0.92 ** (delta / 120.0)
             s_y = 0.97 ** (delta / 120.0)
             
             try:
-                # 3. 获取鼠标位置 (Scene坐标)
+                # 3. 鑾峰彇榧犳爣浣嶇疆 (Scene鍧愭爣)
                 pos = ev.scenePos()
                 
-                # 4. 判定鼠标所在区域
+                # 4. 鍒ゅ畾榧犳爣鎵€鍦ㄥ尯鍩?
                 rect_x = self.ax.getAxis('bottom').sceneBoundingRect()
                 rect_y = self.ax.getAxis('right').sceneBoundingRect()
                 rect_plot = self.ax.vb.sceneBoundingRect()
                 
-                # 5. 计算缩放中心 (数据坐标系 - 必须使用实际价格/时间值)
+                # 5. 璁＄畻缂╂斁涓績 (鏁版嵁鍧愭爣绯?- 蹇呴』浣跨敤瀹為檯浠锋牸/鏃堕棿鍊?
                 center = self.ax.vb.mapSceneToView(pos)
 
                 if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -419,7 +426,7 @@ class ChartWidget(QWidget):
             return orig_mouse_drag_event(ev, axis)
         self.ax.vb.mouseDragEvent = custom_mouse_drag_event
         
-        # 4. 设置一些基础属性
+        # 4. 璁剧疆涓€浜涘熀纭€灞炴€?
         self.ax.showGrid(x=True, y=True)
         self.ax.showAxis('right', show=True)
         self.ax.showAxis('left', show=False)
@@ -440,29 +447,29 @@ class ChartWidget(QWidget):
         self.ax_rsi.setXLink(self.ax)
         self.ax_rsi.setMaximumHeight(120)
 
-        # 十字光标 (Crosshair)
+        # 鍗佸瓧鍏夋爣 (Crosshair)
         self.vLine = pg.InfiniteLine(angle=90, movable=False)
         self.vLine.setPen(pg.mkPen(color='#FFFFFF', style=Qt.PenStyle.DashLine, width=1))
         
         self.hLine = pg.InfiniteLine(angle=0, movable=False)
         self.hLine.setPen(pg.mkPen(color='#FFFFFF', style=Qt.PenStyle.DashLine, width=1))
         
-        # 标签 (Labels) - 改用 TextItem 以便精确定位
+        # 鏍囩 (Labels) - 鏀圭敤 TextItem 浠ヤ究绮剧‘瀹氫綅
         self.txt_price = pg.TextItem(text="", color='#FFFFFF', fill='#333333', anchor=(1, 1))
-        self.txt_price.setZValue(20) # 确保在最上层
+        self.txt_price.setZValue(20) # 纭繚鍦ㄦ渶涓婂眰
         self.ax.addItem(self.txt_price, ignoreBounds=True)
 
         self.txt_time = pg.TextItem(text="", color='#FFFFFF', fill='#333333', anchor=(0.5, 1))
         self.txt_time.setZValue(20)
         self.ax.addItem(self.txt_time, ignoreBounds=True)
 
-        # 价差测算提示
+        # 浠峰樊娴嬬畻鎻愮ず
         self.txt_measure = pg.TextItem(text="", color='#FFFFFF', fill='#333333', anchor=(0, 1))
         self.txt_measure.setZValue(20)
         self.txt_measure.hide()
         self.ax.addItem(self.txt_measure, ignoreBounds=True)
 
-        # K线信息提示 (左上角)
+        # K绾夸俊鎭彁绀?(宸︿笂瑙?
         self.txt_kinfo = pg.TextItem(text="", color='#FFFFFF', fill='#222222', anchor=(0, 0))
         self.txt_kinfo.setZValue(20)
         self.ax.addItem(self.txt_kinfo, ignoreBounds=True)
@@ -479,16 +486,19 @@ class ChartWidget(QWidget):
         self.vLine_rsi.setPen(pg.mkPen(color='#FFFFFF', style=Qt.PenStyle.DashLine, width=1))
         self.ax_rsi.addItem(self.vLine_rsi, ignoreBounds=True)
         
-        # 监听鼠标移动
+        # 鐩戝惉榧犳爣绉诲姩
         self.proxy = pg.SignalProxy(self.ax.scene().sigMouseMoved, rateLimit=60, slot=self.on_mouse_move)
         
-        # 监听鼠标点击 (用于右键菜单定位)
+        # 鐩戝惉榧犳爣鐐瑰嚮 (鐢ㄤ簬鍙抽敭鑿滃崟瀹氫綅)
         self.last_click_scene_pos = None
         self.proxy_click = pg.SignalProxy(self.ax.scene().sigMouseClicked, slot=self.on_mouse_clicked)
 
-        # 添加右键菜单动作
+        # 娣诲姞鍙抽敭鑿滃崟鍔ㄤ綔
         self.sync_action = self.ax.vb.menu.addAction("Sync Time Center")
         self.sync_action.triggered.connect(self.on_sync_action_triggered)
+        self.sync_y_action = self.ax.vb.menu.addAction("Sync Y Center")
+        self.sync_y_action.triggered.connect(self.on_sync_y_action_triggered)
+        
         
         self.replay_start_action = self.ax.vb.menu.addAction("Set Replay Start")
         self.replay_start_action.triggered.connect(self.on_replay_start_action_triggered)
@@ -499,18 +509,18 @@ class ChartWidget(QWidget):
         self.clear_drawings_action = self.ax.vb.menu.addAction("Clear Drawings")
         self.clear_drawings_action.triggered.connect(self.on_clear_drawings)
 
-        # 缩放交互
+        # 缂╂斁浜や簰
         self.ax.setMouseEnabled(x=True, y=True)
         self.ax.getAxis('right').enableAutoSIPrefix(False)
         
-        # 解除缩放和平移限制，允许无限拖动
+        # 瑙ｉ櫎缂╂斁鍜屽钩绉婚檺鍒讹紝鍏佽鏃犻檺鎷栧姩
         self.ax.vb.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
         
-        # 增强网格可见性
+        # 澧炲己缃戞牸鍙鎬?
         self.ax.getAxis('bottom').setGrid(100) # 0-255
         self.ax.getAxis('right').setGrid(100)
 
-        # 还原黑色背景
+        # 杩樺師榛戣壊鑳屾櫙
         pg.setConfigOptions(foreground='#FFFFFF', background='#000000')
         self.glw.setBackground('k')
         
@@ -519,8 +529,8 @@ class ChartWidget(QWidget):
         self.indicator_items = {}
         self.macd_items = {}
         self.rsi_items = {}
-        self.full_df = None # 全量数据引用
-        self.current_df = None # 当前切片数据 (View Slice)
+        self.full_df = None # 鍏ㄩ噺鏁版嵁寮曠敤
+        self.current_df = None # 褰撳墠鍒囩墖鏁版嵁 (View Slice)
         self.current_x = None
         self.current_time_values = None
         self.measure_active = False
@@ -531,39 +541,64 @@ class ChartWidget(QWidget):
         self.drawings = {}
         self.selected_drawing_id = None
         
-        # 监听 Range 变化，用于动态切片加载
+        # 鐩戝惉 Range 鍙樺寲锛岀敤浜庡姩鎬佸垏鐗囧姞杞?
         self.update_timer = QTimer()
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self.refresh_visible_view)
         self.ax.sigXRangeChanged.connect(self.on_range_changed)
         self._last_slice_start = -1
         self._last_slice_end = -1
+        self._slice_padding = 1000
 
     def on_range_changed(self):
-        # 只有当用户拖动时才触发（Replay 也会触发，但我们需要它触发）
-        # 延迟 20ms 更新，合并多次信号
+        # 鍙湁褰撶敤鎴锋嫋鍔ㄦ椂鎵嶈Е鍙戯紙Replay 涔熶細瑙﹀彂锛屼絾鎴戜滑闇€瑕佸畠瑙﹀彂锛?
+        # 寤惰繜 20ms 鏇存柊锛屽悎骞跺娆′俊鍙?
+        if self.full_df is None or self.full_df.empty:
+            return
+
+        min_x, max_x = self.ax.vb.viewRange()[0]
+        if not should_refresh_visible_slice(
+            view_min=min_x,
+            view_max=max_x,
+            total_len=len(self.full_df),
+            last_slice_start=self._last_slice_start,
+            last_slice_end=self._last_slice_end,
+            padding=self._slice_padding,
+        ):
+            return
+
         self.update_timer.start(20)
 
-    def refresh_visible_view(self):
+    def refresh_visible_view(self, force=False):
         if self.full_df is None or self.full_df.empty:
             return
             
-        # 1. 获取当前视图范围
+        # 1. 鑾峰彇褰撳墠瑙嗗浘鑼冨洿
         view_range = self.ax.vb.viewRange()[0]
         min_x, max_x = view_range
         
-        # 2. 计算需要加载的数据范围 (Padding)
-        # 预读左右各 1000 根 (Buffer)
-        padding = 1000
-        slice_start = max(0, int(min_x) - padding)
-        slice_end = min(len(self.full_df), int(max_x) + padding)
-        
-        # 3. 检查是否需要更新
-        if self._last_slice_start != -1:
-            if slice_start >= self._last_slice_start and slice_end <= self._last_slice_end:
-                return
+        # 2. 璁＄畻闇€瑕佸姞杞界殑鏁版嵁鑼冨洿 (Padding)
+        # 棰勮宸﹀彸鍚?1000 鏍?(Buffer)
+        if not force and not should_refresh_visible_slice(
+            view_min=min_x,
+            view_max=max_x,
+            total_len=len(self.full_df),
+            last_slice_start=self._last_slice_start,
+            last_slice_end=self._last_slice_end,
+            padding=self._slice_padding,
+        ):
+            return
 
-        # 4. 执行切片
+        slice_start, slice_end = build_visible_slice_window(
+            view_min=min_x,
+            view_max=max_x,
+            total_len=len(self.full_df),
+            padding=self._slice_padding,
+        )
+        
+        # 3. 妫€鏌ユ槸鍚﹂渶瑕佹洿鏂?
+
+        # 4. 鎵ц鍒囩墖
         df_slice = self.full_df.iloc[slice_start:slice_end]
         if df_slice.empty:
             return
@@ -571,7 +606,7 @@ class ChartWidget(QWidget):
         self._last_slice_start = slice_start
         self._last_slice_end = slice_end
         
-        # 5. 更新图表
+        # 5. 鏇存柊鍥捐〃
         self.update_plot_items(df_slice, offset_x=slice_start)
 
     
@@ -724,14 +759,14 @@ class ChartWidget(QWidget):
         if self.ax.sceneBoundingRect().contains(pos):
             mousePoint = self.ax.vb.mapSceneToView(pos)
 
-            # 绘图预览
+            # 缁樺浘棰勮
             if self.draw_mode in ("line", "fib") and self.draw_first_point is not None:
                 x0, y0 = self.draw_first_point
                 self._clear_preview()
                 preview = pg.PlotCurveItem(
                     x=[x0, mousePoint.x()],
                     y=[y0, mousePoint.y()],
-                    pen=pg.mkPen("#888888", width=1, style=Qt.PenStyle.DotLine),
+                    pen=pg.mkPen("#00E5FF", width=2, style=Qt.PenStyle.DashLine),
                 )
                 self.ax.addItem(preview)
                 self.draw_preview_items.append(preview)
@@ -745,7 +780,7 @@ class ChartWidget(QWidget):
                     self.measure_active = True
                     self.measure_start_y = mousePoint.y()
                 diff = abs(mousePoint.y() - (self.measure_start_y or mousePoint.y()))
-                self.txt_measure.setText(f"Δ {diff:.3f}")
+                self.txt_measure.setText(f"螖 {diff:.3f}")
                 self.txt_measure.setPos(mousePoint.x(), mousePoint.y())
                 self.txt_measure.show()
             else:
@@ -754,24 +789,30 @@ class ChartWidget(QWidget):
                     self.measure_start_y = None
                     self.txt_measure.hide()
             
-            # 1. 移动自己的水平线 (价格)
+            # 1. 绉诲姩鑷繁鐨勬按骞崇嚎 (浠锋牸)
+            is_dragging_view = left_down and not ctrl_down and self.draw_mode is None
+            if is_dragging_view:
+                self.txt_time.setText("")
+                self.txt_kinfo.setHtml("")
+                return
+
             self.hLine.setPos(mousePoint.y())
-            # 移动垂直线 (时间) - 恢复平滑跟随鼠标，不强制吸附
+            # 绉诲姩鍨傜洿绾?(鏃堕棿) - 鎭㈠骞虫粦璺熼殢榧犳爣锛屼笉寮哄埗鍚搁檮
             self.vLine.setPos(mousePoint.x())
             self.vLine_macd.setPos(mousePoint.x())
             self.vLine_rsi.setPos(mousePoint.x())
             
-            # 获取当前视图范围
+            # 鑾峰彇褰撳墠瑙嗗浘鑼冨洿
             view_range = self.ax.vb.viewRange()
             x_min, x_max = view_range[0]
             y_min, y_max = view_range[1]
             
-            # 更新价格标签
+            # 鏇存柊浠锋牸鏍囩
             self.txt_price.setText(f"{mousePoint.y():.4f}")
             self.txt_price.setPos(x_max, mousePoint.y())
             self.txt_price.setAnchor((1, 0.5))
             
-            # 2. 时间标签处理
+            # 2. 鏃堕棿鏍囩澶勭悊
             if self.current_df is not None and self.current_x is not None and len(self.current_x) > 0:
                 idx = int(round(mousePoint.x()))
                 last_idx = len(self.current_x) - 1
@@ -779,7 +820,7 @@ class ChartWidget(QWidget):
                 if 0 <= idx <= last_idx:
                     dt = self.current_df.index[idx]
                 else:
-                    # 外推时间
+                    # 澶栨帹鏃堕棿
                     if idx > last_idx:
                         diff = idx - last_idx
                         base_dt = self.current_df.index[last_idx]
@@ -787,18 +828,18 @@ class ChartWidget(QWidget):
                         diff = idx
                         base_dt = self.current_df.index[0]
                     
-                    # 使用 time_axis 计算出的步长
+                    # 浣跨敤 time_axis 璁＄畻鍑虹殑姝ラ暱
                     delta = self.time_axis._delta if self.time_axis._delta else datetime.timedelta(minutes=1)
                     dt = base_dt + delta * diff
 
                 dt_str = dt.strftime('%Y-%m-%d %H:%M:%S')
                 self.txt_time.setText(dt_str)
                 
-                # 位置跟随鼠标 (平滑)，而不是吸附到 idx
+                # 浣嶇疆璺熼殢榧犳爣 (骞虫粦)锛岃€屼笉鏄惛闄勫埌 idx
                 self.txt_time.setPos(mousePoint.x(), y_min)
                 self.txt_time.setAnchor((0.5, 1))
 
-                # K线信息 (开高低收 + RSI6/12/24)
+                # K绾夸俊鎭?(寮€楂樹綆鏀?+ RSI6/12/24)
                 if 0 <= idx <= last_idx:
                     row = self.current_df.iloc[idx]
                     o = row.get('open', np.nan)
@@ -817,8 +858,8 @@ class ChartWidget(QWidget):
                     self.txt_kinfo.setHtml(info)
                     self.txt_kinfo.setPos(x_min, y_max)
 
-                # 发射信号 (如果是未来时间，也发射时间戳，以便其他窗口同步)
-                # 使用 dt.value (纳秒) 转为秒，避免 naive datetime 的 timestamp() 时区问题
+                # 鍙戝皠淇″彿 (濡傛灉鏄湭鏉ユ椂闂达紝涔熷彂灏勬椂闂存埑锛屼互渚垮叾浠栫獥鍙ｅ悓姝?
+                # 浣跨敤 dt.value (绾崇) 杞负绉掞紝閬垮厤 naive datetime 鐨?timestamp() 鏃跺尯闂
                 ts_seconds = dt.value / 1e9
                 self.sig_mouse_moved.emit(ts_seconds)
                 self.sig_mouse_moved_with_price.emit(ts_seconds, mousePoint.y())
@@ -826,11 +867,11 @@ class ChartWidget(QWidget):
                 self.txt_time.setText("")
 
     def on_mouse_clicked(self, evt):
-        # 记录点击位置，供右键菜单使用
+        # 璁板綍鐐瑰嚮浣嶇疆锛屼緵鍙抽敭鑿滃崟浣跨敤
         event = evt[0]
         self.last_click_scene_pos = event.scenePos()
 
-        # 选择绘图对象
+        # 閫夋嫨缁樺浘瀵硅薄
         items = self.ax.scene().items(event.scenePos())
         sel_id = None
         for it in items:
@@ -848,12 +889,19 @@ class ChartWidget(QWidget):
         if self.last_click_scene_pos is None or self.current_df is None:
             return
         
-        # 将 Scene 坐标转换为 View 坐标 (X轴为 Index)
+        # 灏?Scene 鍧愭爣杞崲涓?View 鍧愭爣 (X杞翠负 Index)
         mousePoint = self.ax.vb.mapSceneToView(self.last_click_scene_pos)
         dt = self.get_datetime_from_x(mousePoint.x())
         
         if dt:
             self.sig_sync_center_requested.emit(dt)
+
+    def on_sync_y_action_triggered(self):
+        if self.last_click_scene_pos is None:
+            return
+
+        mousePoint = self.ax.vb.mapSceneToView(self.last_click_scene_pos)
+        self.sig_sync_y_center_requested.emit(float(mousePoint.y()))
 
     def on_replay_start_action_triggered(self):
         if self.last_click_scene_pos is None or self.current_df is None:
@@ -944,7 +992,7 @@ class ChartWidget(QWidget):
             x1 = self._x_from_datetime(p1_dt)
             x2 = self._x_from_datetime(p2_dt)
             if x1 is not None and x2 is not None:
-                curve = pg.PlotCurveItem(x=[x1, x2], y=[p1_price, p2_price], pen=pg.mkPen("#FF4444", width=1))
+                curve = pg.PlotCurveItem(x=[x1, x2], y=[p1_price, p2_price], pen=pg.mkPen("#00E5FF", width=2.5))
                 self.ax.addItem(curve)
                 curve._is_drawing = True
                 curve._drawing_id = draw_id
@@ -953,18 +1001,39 @@ class ChartWidget(QWidget):
             x1 = self._x_from_datetime(p1_dt)
             x2 = self._x_from_datetime(p2_dt)
             if x1 is not None and x2 is not None:
-                y_high = p1_price
-                y_low = p2_price
-                if y_low > y_high:
-                    y_high, y_low = y_low, y_high
-                levels = [0.382, 0.5, 0.618, 0.8]
+                start_price = p1_price
+                end_price = p2_price
+                x_left = min(x1, x2)
+                x_right = max(x1, x2)
+
+                edge_pen = pg.mkPen("#FFD54A", width=2.0)
+                for y in (start_price, end_price):
+                    edge = pg.PlotCurveItem(x=[x_left, x_right], y=[y, y], pen=edge_pen)
+                    self.ax.addItem(edge)
+                    edge._is_drawing = True
+                    edge._drawing_id = draw_id
+                    items.append(edge)
+
+                levels = [0.236, 0.5, 0.618, 0.7, 0.8]
                 for lv in levels:
-                    y = y_low + (y_high - y_low) * lv
-                    curve = pg.PlotCurveItem(x=[x1, x2], y=[y, y], pen=pg.mkPen("#FF4444", width=1, style=Qt.PenStyle.DashLine))
+                    y = end_price + (start_price - end_price) * lv
+                    curve = pg.PlotCurveItem(x=[x_left, x_right], y=[y, y], pen=pg.mkPen("#FFD54A", width=2.2, style=Qt.PenStyle.DashLine))
                     self.ax.addItem(curve)
                     curve._is_drawing = True
                     curve._drawing_id = draw_id
                     items.append(curve)
+                    label = pg.TextItem(
+                        text=f"{lv:.3f}  {y:.3f}",
+                        color="#FFD54A",
+                        fill=pg.mkBrush(20, 20, 20, 220),
+                        anchor=(0, 0.5),
+                    )
+                    label.setPos(x_right, y)
+                    label.setZValue(21)
+                    label._is_drawing = True
+                    label._drawing_id = draw_id
+                    self.ax.addItem(label, ignoreBounds=True)
+                    items.append(label)
 
         if items:
             self.drawings[draw_id] = items
@@ -999,7 +1068,7 @@ class ChartWidget(QWidget):
         return idx
 
     def get_datetime_from_x(self, x_val):
-        """根据 X 轴坐标 (Index) 获取时间，支持外推"""
+        """UI helper."""
         if self.current_df is None or self.current_df.empty:
             return None
             
@@ -1009,7 +1078,7 @@ class ChartWidget(QWidget):
         if 0 <= idx <= last_idx:
             return self.current_df.index[idx]
         
-        # 外推
+        # 澶栨帹
         if idx > last_idx:
             diff = idx - last_idx
             base_dt = self.current_df.index[last_idx]
@@ -1021,41 +1090,41 @@ class ChartWidget(QWidget):
         return base_dt + delta * diff
 
     def get_timestamp_from_x(self, x_val):
-        """将 X 轴坐标转换为时间戳"""
+        """Convert an x-axis value back to a timestamp-like coordinate."""
         if self.current_x is None or len(self.current_x) == 0:
             return None
         return float(x_val)
 
     def sync_vline(self, timestamp):
-        """接收外部时间戳，移动垂直线"""
+        """Move the vertical cursor line to the requested timestamp."""
         if self.current_time_values is None or len(self.current_time_values) == 0:
             return
         
-        # 1. 尝试在范围内查找
-        # current_time_values 是纳秒级 int64 (view) 转成的 float
-        # timestamp 是 float (秒)
-        # 需要统一单位。pandas view('int64') 是纳秒。timestamp 是秒。
-        # 等等，之前的 current_time_values 已经是 float64 吗？
+        # 1. 灏濊瘯鍦ㄨ寖鍥村唴鏌ユ壘
+        # current_time_values 鏄撼绉掔骇 int64 (view) 杞垚鐨?float
+        # timestamp 鏄?float (绉?
+        # 闇€瑕佺粺涓€鍗曚綅銆俻andas view('int64') 鏄撼绉掋€倀imestamp 鏄銆?
+        # 绛夌瓑锛屼箣鍓嶇殑 current_time_values 宸茬粡鏄?float64 鍚楋紵
         # self.current_time_values = np.asarray(df.index.view('int64'), dtype=np.float64)
-        # timestamp() 返回的是秒。
-        # 这是一个严重的单位不匹配隐患，之前可能因为碰巧数值大没报错或者逻辑被掩盖。
-        # 让我们检查 update_chart 中的赋值。
+        # timestamp() 杩斿洖鐨勬槸绉掋€?
+        # 杩欐槸涓€涓弗閲嶇殑鍗曚綅涓嶅尮閰嶉殣鎮ｏ紝涔嬪墠鍙兘鍥犱负纰板阀鏁板€煎ぇ娌℃姤閿欐垨鑰呴€昏緫琚帺鐩栥€?
+        # 璁╂垜浠鏌?update_chart 涓殑璧嬪€笺€?
         
-        # 在 update_chart: self.current_time_values = np.asarray(df.index.view('int64'), dtype=np.float64) // 10**9 
-        # 必须除以 10^9 才是秒。原代码漏了除法吗？
-        # 原代码：self.current_time_values = np.asarray(df.index.view('int64'), dtype=np.float64)
-        # 这就是纳秒。
-        # 而 sig_mouse_moved 发射的是 dt.timestamp() (秒)。
-        # searchsorted 会完全失效（总是返回 0 或 len）。
+        # 鍦?update_chart: self.current_time_values = np.asarray(df.index.view('int64'), dtype=np.float64) // 10**9 
+        # 蹇呴』闄や互 10^9 鎵嶆槸绉掋€傚師浠ｇ爜婕忎簡闄ゆ硶鍚楋紵
+        # 鍘熶唬鐮侊細self.current_time_values = np.asarray(df.index.view('int64'), dtype=np.float64)
+        # 杩欏氨鏄撼绉掋€?
+        # 鑰?sig_mouse_moved 鍙戝皠鐨勬槸 dt.timestamp() (绉?銆?
+        # searchsorted 浼氬畬鍏ㄥけ鏁堬紙鎬绘槸杩斿洖 0 鎴?len锛夈€?
         
-        # 既然现在我要重写 sync_vline，我必须确保存储的是秒，或者转换一下。
-        # 考虑到性能，最好存秒。
+        # 鏃㈢劧鐜板湪鎴戣閲嶅啓 sync_vline锛屾垜蹇呴』纭繚瀛樺偍鐨勬槸绉掞紝鎴栬€呰浆鎹竴涓嬨€?
+        # 鑰冭檻鍒版€ц兘锛屾渶濂藉瓨绉掋€?
         
-        # 为了最小化改动风险，我会在 searchsorted 前转换 timestamp 为纳秒，或者...
-        # 不，最好在 update_chart 里修正 current_time_values 的单位。
-        # 但 update_chart 还没改。
+        # 涓轰簡鏈€灏忓寲鏀瑰姩椋庨櫓锛屾垜浼氬湪 searchsorted 鍓嶈浆鎹?timestamp 涓虹撼绉掞紝鎴栬€?..
+        # 涓嶏紝鏈€濂藉湪 update_chart 閲屼慨姝?current_time_values 鐨勫崟浣嶃€?
+        # 浣?update_chart 杩樻病鏀广€?
         
-        # 让我们先假定 current_time_values 是纳秒。
+        # 璁╂垜浠厛鍋囧畾 current_time_values 鏄撼绉掋€?
         ts_ns = timestamp * 1e9
         
         if len(self.current_time_values) > 0:
@@ -1063,13 +1132,13 @@ class ChartWidget(QWidget):
             last_ts = self.current_time_values[-1]
 
             if first_ts <= ts_ns <= last_ts:
-                # 范围内
+                # 鑼冨洿鍐?
                 idx = int(np.searchsorted(self.current_time_values, ts_ns))
                 self.vLine.setPos(idx)
                 self.vLine_macd.setPos(idx)
                 self.vLine_rsi.setPos(idx)
             else:
-                # 范围外，进行反算
+                # 鑼冨洿澶栵紝杩涜鍙嶇畻
                 delta_ns = self.time_axis._delta.total_seconds() * 1e9
                 if delta_ns > 0:
                     if ts_ns > last_ts:
@@ -1077,7 +1146,7 @@ class ChartWidget(QWidget):
                         idx = (len(self.current_time_values) - 1) + diff
                     else:
                         diff = (ts_ns - first_ts) / delta_ns
-                        idx = diff # 负数
+                        idx = diff # 璐熸暟
                     self.vLine.setPos(idx)
                     self.vLine_macd.setPos(idx)
                     self.vLine_rsi.setPos(idx)
@@ -1092,7 +1161,7 @@ class ChartWidget(QWidget):
 
     def set_period(self, period):
         self.current_period = period
-        # 更新按钮状态
+        # 鏇存柊鎸夐挳鐘舵€?
         display = self.display_map.get(period, period)
         for btn in self.btn_group.buttons():
             if btn.text() == display:
@@ -1110,16 +1179,16 @@ class ChartWidget(QWidget):
     def on_ema_toggle_changed(self, _checked):
         if not hasattr(self, "full_df") or self.full_df is None or self.full_df.empty:
             return
-        # 强制重新切片刷新，立即应用EMA显隐
+        # 寮哄埗閲嶆柊鍒囩墖鍒锋柊锛岀珛鍗冲簲鐢‥MA鏄鹃殣
         self._last_slice_start = -1
         self._last_slice_end = -1
-        self.refresh_visible_view()
+        self.refresh_visible_view(force=True)
 
     def update_chart(self, df, auto_scale=False, highlight_idx=None):
         if df is None or df.empty:
             return
 
-        # 性能优化：检查数据是否真的更新了
+        # 鎬ц兘浼樺寲锛氭鏌ユ暟鎹槸鍚︾湡鐨勬洿鏂颁簡
         current_last_ts = df.index[-1].timestamp()
         current_last_close = df['close'].iloc[-1]
         
@@ -1134,41 +1203,41 @@ class ChartWidget(QWidget):
         self._last_update_len = len(df)
         self._last_update_close = current_last_close
 
-        # 保存全量数据引用
+        # 淇濆瓨鍏ㄩ噺鏁版嵁寮曠敤
         if df.index.tz is not None:
             df = df.copy()
             df.index = df.index.tz_localize(None)
         
         self.full_df = df
-        self.current_df = df # 兼容旧逻辑
+        self.current_df = df # 鍏煎鏃ч€昏緫
         
-        # 数据源变更，重置切片缓存，确保 refresh_visible_view 能触发更新
+        # 鏁版嵁婧愬彉鏇达紝閲嶇疆鍒囩墖缂撳瓨锛岀‘淇?refresh_visible_view 鑳借Е鍙戞洿鏂?
         self._last_slice_start = -1
         self._last_slice_end = -1
         
-        # 记录更新前的视图状态
+        # 璁板綍鏇存柊鍓嶇殑瑙嗗浘鐘舵€?
         last_len = len(self.current_x) if self.current_x is not None else 0
         self.current_x = np.arange(len(df), dtype=np.float64)
         self.current_time_values = np.asarray(df.index.view('int64'), dtype=np.float64)
         
-        # 调试：UI 层收到的数据检查
+        # 璋冭瘯锛歎I 灞傛敹鍒扮殑鏁版嵁妫€鏌?
         # print(f"UI update_chart received {len(df)} rows. First 3: {df.index[:3].tolist()}")
         
         self.time_axis.set_datetime_index(df.index)
 
-        # 处理视图范围
+        # 澶勭悊瑙嗗浘鑼冨洿
         view_range = self.ax.vb.viewRange()
         view_right = view_range[0][1]
         is_following = (view_right >= last_len - 0.5)
 
         if len(df) > 0:
             if auto_scale:
-                # 类似 TradingView：定位到目标索引（或末尾），显示约 150 根 K 线
+                # 绫讳技 TradingView锛氬畾浣嶅埌鐩爣绱㈠紩锛堟垨鏈熬锛夛紝鏄剧ず绾?150 鏍?K 绾?
                 idx = highlight_idx if highlight_idx is not None else len(df) - 1
                 x_start = max(0, idx - 150)
-                x_end = idx + 20 # 预留右侧空白
+                x_end = idx + 20 # 棰勭暀鍙充晶绌虹櫧
                 
-                # 计算该范围内的 Y 轴
+                # 璁＄畻璇ヨ寖鍥村唴鐨?Y 杞?
                 visible_slice = df.iloc[int(x_start):int(x_end)]
                 if not visible_slice.empty:
                     y_min = visible_slice['low'].min()
@@ -1181,7 +1250,7 @@ class ChartWidget(QWidget):
                 diff = len(df) - last_len
                 self.ax.vb.translateBy(x=diff, y=0)
                 
-                # 跟随模式下也自动调整 Y 轴 (最近 150 根)
+                # 璺熼殢妯″紡涓嬩篃鑷姩璋冩暣 Y 杞?(鏈€杩?150 鏍?
                 idx = len(df) - 1
                 visible_slice = df.iloc[max(0, idx-150):idx+1]
                 y_min = visible_slice['low'].min()
@@ -1189,8 +1258,8 @@ class ChartWidget(QWidget):
                 y_pad = (y_max - y_min) * 0.1
                 self.ax.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
 
-        # 触发首次渲染
-        self.refresh_visible_view()
+        # 瑙﹀彂棣栨娓叉煋
+        self.refresh_visible_view(force=True)
         
         if hasattr(self, '_custom_wheel_event'):
             self.ax.vb.wheelEvent = self._custom_wheel_event
@@ -1219,7 +1288,7 @@ class FloatingChartWindow(QWidget):
         layout.addWidget(self.chart_widget)
         self.chart_widget.show()
         
-        # 更新标题
+        # 鏇存柊鏍囬
         self.chart_widget.sig_period_changed.connect(self.update_title)
 
     def update_title(self, period_display):
@@ -1238,6 +1307,7 @@ class MainWindow(QWidget):
         
         self.engine = DataEngine(parquet_file=None) 
         self.replay_engine = ReplayEngine(self.engine)
+        self.settings = QSettings("TradeReview", "TradeReview")
         self.current_time = datetime.datetime.now()
         self.is_playing = False
         self.replay_speed = 60 
@@ -1252,14 +1322,15 @@ class MainWindow(QWidget):
         
         self.floating_windows = []
         self.charts = []
-        self.tabs = None # 引用 tabs 组件
+        self.tabs = None # 寮曠敤 tabs 缁勪欢
         self.init_charts()
         
-        self.switch_layout("Tabs") # 默认 Tabs
+        self.switch_layout("Tabs") # 榛樿 Tabs
         
         self.timer = QTimer()
         self.timer.timeout.connect(self.on_timer_tick)
         self.timer.start(100) 
+        QTimer.singleShot(0, self.restore_saved_view)
 
     def _get_ticks_tz(self):
         if self.engine.df_ticks is None:
@@ -1275,18 +1346,136 @@ class MainWindow(QWidget):
             return ts.tz_localize(tz)
         return ts.tz_convert(tz)
 
+    def _to_qdatetime(self, dt):
+        ts = normalize_jump_timestamp(dt)
+        if isinstance(ts, pd.Timestamp):
+            dt = ts.to_pydatetime()
+        else:
+            dt = ts
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
+        return QDateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, 0)
+
     def _set_date_edit(self, dt):
         if dt is None:
             return
-        if isinstance(dt, pd.Timestamp):
-            dt = dt.to_pydatetime()
-        if dt.tzinfo is not None:
-            dt = dt.replace(tzinfo=None)
-        self.date_edit.setDateTime(QDateTime(dt.year, dt.month, dt.day,
-                                            dt.hour, dt.minute, dt.second))
+        self.date_edit.setDateTime(self._to_qdatetime(dt))
+
+    def _update_date_edit_bounds(self):
+        if not hasattr(self, "date_edit"):
+            return
+        if self.engine.df_ticks is None or self.engine.df_ticks.empty:
+            return
+        start = normalize_jump_timestamp(self.engine.df_ticks.index[0])
+        end = normalize_jump_timestamp(self.engine.df_ticks.index[-1])
+        if end < start:
+            end = start
+        self.date_edit.setMinimumDateTime(self._to_qdatetime(start))
+        self.date_edit.setMaximumDateTime(self._to_qdatetime(end))
+
+    def _center_charts_on_time(self, target_dt):
+        target_ts = self._normalize_time(target_dt)
+        for chart in self._get_enabled_charts():
+            if chart.full_df is None or chart.full_df.empty:
+                continue
+
+            idx, close_price = resolve_chart_target(chart.full_df, target_ts)
+            if idx is None:
+                continue
+
+            x_range = chart.ax.vb.viewRange()[0]
+            x_span = x_range[1] - x_range[0]
+            if x_span <= 0:
+                x_span = max(self._get_view_count_for_period(chart.current_period), 100)
+            chart.ax.setXRange(idx - x_span / 2, idx + x_span / 2, padding=0)
+
+            if close_price is None or not np.isfinite(close_price):
+                continue
+            y_range = chart.ax.vb.viewRange()[1]
+            y_span = y_range[1] - y_range[0]
+            if not np.isfinite(y_span) or y_span <= 0:
+                y_span = max(abs(close_price) * 0.02, 1.0)
+            half_span = y_span / 2
+            chart.ax.setYRange(close_price - half_span, close_price + half_span, padding=0)
+
+    def jump_to_time(self, target_dt):
+        if self.engine.df_ticks is None or self.engine.df_ticks.empty:
+            return
+
+        target_ts = normalize_jump_timestamp(self._normalize_time(target_dt))
+        start = normalize_jump_timestamp(self.engine.df_ticks.index[0])
+        end = normalize_jump_timestamp(self.engine.df_ticks.index[-1])
+        target_ts = clamp_timestamp(target_ts, start, end)
+        self.current_time = target_ts
+
+        self.date_edit.blockSignals(True)
+        self._set_date_edit(self.current_time)
+        self.date_edit.blockSignals(False)
+
+        if self.chk_replay.isChecked():
+            self._ensure_replay_engine()
+            self.replay_engine.reset(self.current_time)
+
+        self.refresh_all_charts(auto_scale=False)
+        self._center_charts_on_time(self.current_time)
+
+    def on_date_edit_finished(self):
+        if self.engine.df_ticks is None or self.engine.df_ticks.empty:
+            return
+        selected_dt = self.date_edit.dateTime().toPyDateTime().replace(second=0, microsecond=0)
+        self.jump_to_time(selected_dt)
+
+    def _get_view_center_time(self):
+        charts = self._get_enabled_charts()
+        if self.combo_layout.currentText() == "Tabs" and self.tabs is not None:
+            current_chart = self.tabs.currentWidget()
+            if current_chart is not None:
+                charts = [current_chart]
+
+        for chart in charts:
+            if chart.full_df is None or chart.full_df.empty:
+                continue
+            x_min, x_max = chart.ax.vb.viewRange()[0]
+            center_dt = chart.get_datetime_from_x((x_min + x_max) / 2.0)
+            if center_dt is not None:
+                return normalize_jump_timestamp(self._normalize_time(center_dt))
+        if self.engine.df_ticks is None or self.engine.df_ticks.empty:
+            return None
+        return normalize_jump_timestamp(self._normalize_time(self.current_time))
+
+    def on_save_view(self):
+        if self.engine.df_ticks is None or self.engine.df_ticks.empty or not self.engine.parquet_file:
+            QMessageBox.information(self, "Save View", "Load a database before saving the current view.")
+            return
+
+        center_time = self._get_view_center_time()
+        if center_time is None:
+            QMessageBox.warning(self, "Save View", "No chart position is available to save.")
+            return
+
+        save_session_state(
+            self.settings,
+            SessionState(
+                db_path=str(self.engine.parquet_file),
+                center_time=center_time,
+            ),
+        )
+        QMessageBox.information(self, "Save View", "Current database and chart position have been saved.")
+
+    def restore_saved_view(self):
+        if self.engine.df_ticks is not None and not self.engine.df_ticks.empty:
+            return
+
+        state = load_session_state(self.settings)
+        if state is None:
+            return
+        if not os.path.exists(state.db_path):
+            return
+
+        self.load_data_file(state.db_path, restore_time=state.center_time)
 
     def _get_replay_periods(self):
-        return [chart.current_period for chart in self.charts]
+        return [chart.current_period for chart in self._get_enabled_charts()]
 
     def _ensure_replay_engine(self):
         if self.engine.df_ticks is None:
@@ -1300,7 +1489,7 @@ class MainWindow(QWidget):
 
     def _get_replay_max_count_map(self):
         max_count_map = {}
-        for chart in self.charts:
+        for chart in self._get_enabled_charts():
             period = chart.current_period
             max_count_map[period] = self._get_max_count_for_period(period)
         return max_count_map
@@ -1374,42 +1563,43 @@ class MainWindow(QWidget):
         return 200
 
     def init_charts(self):
-        # 初始只创建4个，默认给不同周期
+        # 鍒濆鍙垱寤?涓紝榛樿缁欎笉鍚屽懆鏈?
         configs = [("1h", "1h"), ("15min", "15min"), ("5min", "5min"), ("1min", "1min")]
         for i, (display, period) in enumerate(configs):
             chart = ChartWidget(display)
-            # 设置初始周期并触发加载
+            # 璁剧疆鍒濆鍛ㄦ湡骞惰Е鍙戝姞杞?
             chart.set_period(period)
             
-            # 监听周期改变，触发重绘 + 更新 Tab 标题
+            # 鐩戝惉鍛ㄦ湡鏀瑰彉锛岃Е鍙戦噸缁?+ 鏇存柊 Tab 鏍囬
             chart.sig_period_changed.connect(lambda p, c=chart: self.on_chart_period_changed(c, p))
             
-            # 监听分离请求
+            # 鐩戝惉鍒嗙璇锋眰
             chart.sig_detach_requested.connect(self.toggle_chart_detach)
             
-            # 监听同步请求
+            # 鐩戝惉鍚屾璇锋眰
             chart.sig_sync_center_requested.connect(self.sync_charts_center)
+            chart.sig_sync_y_center_requested.connect(self.sync_charts_y_center)
             
-            # 监听回放跳转请求
+            # 鐩戝惉鍥炴斁璺宠浆璇锋眰
             chart.sig_set_replay_start.connect(self.set_replay_start_time)
             
-            # 连接光标同步信号
-            chart.sig_mouse_moved_with_price.connect(self.sync_all_charts_crosshair)
+            # 杩炴帴鍏夋爣鍚屾淇″彿
+            chart.sig_mouse_moved_with_price.connect(partial(self.sync_all_charts_crosshair, chart))
             chart.sig_drawing_request.connect(self.on_drawing_request)
             chart.sig_drawing_delete_request.connect(self.on_drawing_delete)
             chart.sig_drawing_clear_request.connect(self.on_drawing_clear)
             self.charts.append(chart)
 
     def set_replay_start_time(self, target_dt):
-        """跳转回放时间到指定点"""
+        """UI helper."""
         if self.engine.df_ticks is None:
             return
 
-        # 如果当前不在回放模式，自动开启
+        # 濡傛灉褰撳墠涓嶅湪鍥炴斁妯″紡锛岃嚜鍔ㄥ紑鍚?
         if not self.chk_replay.isChecked():
             self.chk_replay.setChecked(True)
             
-        # 更新内部时间
+        # 鏇存柊鍐呴儴鏃堕棿
         self.current_time = self._normalize_time(target_dt)
         if self.replay_engine is not None:
             self.replay_engine.initialize(
@@ -1418,18 +1608,18 @@ class MainWindow(QWidget):
                 max_count_map=self._get_replay_max_count_map(),
             )
         
-        # 更新时间显示框
+        # 鏇存柊鏃堕棿鏄剧ず妗?
         self.date_edit.blockSignals(True)
         self._set_date_edit(self.current_time)
         self.date_edit.blockSignals(False)
         
-        # 强制刷新图表
-        self.refresh_all_charts(auto_scale=True) # 跳转后通常希望自动聚焦
+        # 寮哄埗鍒锋柊鍥捐〃
+        self.refresh_all_charts(auto_scale=True) # 璺宠浆鍚庨€氬父甯屾湜鑷姩鑱氱劍
 
     def sync_charts_center(self, target_dt):
-        """将所有图表视图中心对齐到指定时间"""
+        """UI helper."""
         target_ts = self._normalize_time(target_dt)
-        for chart in self.charts:
+        for chart in self._get_enabled_charts():
             if chart.full_df is None or chart.full_df.empty:
                 continue
 
@@ -1445,20 +1635,20 @@ class MainWindow(QWidget):
 
             chart.ax.setXRange(new_min, new_max, padding=0)
 
+    def sync_charts_y_center(self, target_price):
+        for chart in self._get_enabled_charts():
+            view_range = chart.ax.vb.viewRange()[1]
+            span = view_range[1] - view_range[0]
+            if span <= 0:
+                span = max(abs(target_price) * 0.02, 1.0)
+            half_span = span / 2
+            chart.ax.setYRange(target_price - half_span, target_price + half_span, padding=0)
+
     def _get_chart_index_for_dt(self, chart, target_dt):
         df = chart.full_df
         if df is None or df.empty:
             return None
-        ts = target_dt
-        if df.index.tz is None and ts.tzinfo is not None:
-            ts = ts.tz_convert("America/New_York").tz_localize(None)
-        elif df.index.tz is not None and ts.tzinfo is None:
-            ts = ts.tz_localize(df.index.tz)
-        idx = int(df.index.searchsorted(ts))
-        if idx < 0:
-            idx = 0
-        if idx >= len(df):
-            idx = len(df) - 1
+        idx, _ = resolve_chart_target(df, target_dt)
         return idx
 
     def on_chart_period_changed(self, chart, period_display):
@@ -1469,22 +1659,22 @@ class MainWindow(QWidget):
                 max_count_map=self._get_replay_max_count_map(),
             )
 
-        # 1. 刷新数据
+        # 1. 鍒锋柊鏁版嵁
         self.refresh_single_chart(chart, auto_scale=True)
         
-        # 2. 如果在 Tabs 模式，更新标题
+        # 2. 濡傛灉鍦?Tabs 妯″紡锛屾洿鏂版爣棰?
         if self.combo_layout.currentText() == "Tabs" and self.tabs is not None:
             idx = self.tabs.indexOf(chart)
             if idx != -1:
                 self.tabs.setTabText(idx, period_display)
 
     def sync_all_charts(self, timestamp):
-        """同步所有图表的垂直光标"""
-        for chart in self.charts:
+        """UI helper."""
+        for chart in self._get_enabled_charts():
             chart.sync_vline(timestamp)
 
-    def sync_all_charts_crosshair(self, timestamp, price):
-        for chart in self.charts:
+    def sync_all_charts_crosshair(self, source_chart, timestamp, price):
+        for chart in get_crosshair_sync_targets(self._get_enabled_charts(), source_chart):
             chart.sync_crosshair(timestamp, price)
 
     def on_drawing_request(self, spec):
@@ -1513,12 +1703,27 @@ class MainWindow(QWidget):
         btn_reset = QPushButton("Reset View")
         btn_reset.clicked.connect(self.reset_charts_view)
         panel.addWidget(btn_reset)
+
+        btn_save_view = QPushButton("Save View")
+        btn_save_view.clicked.connect(self.on_save_view)
+        panel.addWidget(btn_save_view)
         
         panel.addWidget(QLabel("Layout:"))
         self.combo_layout = QComboBox()
-        self.combo_layout.addItems(["Tabs", "Grid 2x2", "Vertical"]) # Tabs 放前面
+        self.combo_layout.addItems(["Tabs", "Dual Vertical", "Grid 2x2", "Vertical"]) # Tabs first
         self.combo_layout.currentTextChanged.connect(self.switch_layout)
         panel.addWidget(self.combo_layout)
+        self.btn_detach_layout = QPushButton("Pop Layout")
+        self.btn_detach_layout.clicked.connect(self.detach_layout_charts)
+        panel.addWidget(self.btn_detach_layout)
+        panel.addWidget(QLabel("Charts:"))
+        self.combo_chart_count = QComboBox()
+        self.combo_chart_count.addItems(["1", "2", "3", "4"])
+        self.combo_chart_count.setCurrentText("4")
+        self.combo_chart_count.currentTextChanged.connect(self.on_chart_count_changed)
+        panel.addWidget(self.combo_chart_count)
+
+
 
         self.chk_replay = QCheckBox("Replay Mode")
         self.chk_replay.setChecked(False)
@@ -1548,7 +1753,7 @@ class MainWindow(QWidget):
         self.speed_btn_group = QButtonGroup()
         self.speed_btn_group.setExclusive(True)
         
-        # 定义常用倍速
+        # 瀹氫箟甯哥敤鍊嶉€?
         speeds = [1, 10, 60, 120, 300, 600]
         
         for s in speeds:
@@ -1556,7 +1761,7 @@ class MainWindow(QWidget):
             btn.setCheckable(True)
             btn.setFixedSize(40, 25)
             
-            # 默认选中 60x
+            # 榛樿閫変腑 60x
             if s == 60:
                 btn.setChecked(True)
                 self.replay_speed = s
@@ -1566,7 +1771,10 @@ class MainWindow(QWidget):
             panel.addWidget(btn)
 
         self.date_edit = QDateTimeEdit()
-        self.date_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        self.date_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.date_edit.setCalendarPopup(True)
+        self.date_edit.setKeyboardTracking(False)
+        self.date_edit.editingFinished.connect(self.on_date_edit_finished)
         self._set_date_edit(self.current_time)
         panel.addWidget(self.date_edit)
         
@@ -1579,16 +1787,51 @@ class MainWindow(QWidget):
         else:
             self.detach_chart(chart)
 
-    def detach_chart(self, chart):
+    def detach_layout_charts(self):
+        layout_name = self.combo_layout.currentText()
+        charts_to_detach = self._get_layout_charts(layout_name)
+        detached_any = False
+        for chart in charts_to_detach:
+            if chart.is_detached:
+                continue
+            self.detach_chart(chart, refresh_layout=False)
+            detached_any = True
+        if detached_any:
+            self.switch_layout(layout_name)
+
+    def detach_chart(self, chart, refresh_layout=True):
+        if chart.is_detached:
+            return
+
         chart.set_detached_state(True)
-        
+
         fw = FloatingChartWindow(chart)
         fw.sig_window_closed.connect(self.on_floating_window_closed)
         fw.show()
         self.floating_windows.append(fw)
-        
-        # Update main layout
+
+        if refresh_layout:
+            self.switch_layout(self.combo_layout.currentText())
+
+    def on_chart_count_changed(self, count_text):
+        try:
+            enabled_count = max(1, int(count_text))
+        except ValueError:
+            return
+
+        for chart in self.charts[enabled_count:]:
+            if chart.is_detached:
+                self.attach_chart(chart)
+
+        if self.chk_replay.isChecked() and self.engine.df_ticks is not None:
+            self.replay_engine.initialize(
+                self._get_replay_periods(),
+                self.current_time,
+                max_count_map=self._get_replay_max_count_map(),
+            )
+
         self.switch_layout(self.combo_layout.currentText())
+        self.refresh_all_charts(auto_scale=True)
 
     def attach_chart(self, chart):
         # Find window and close it. Logic handled in on_floating_window_closed
@@ -1596,7 +1839,6 @@ class MainWindow(QWidget):
             if fw.chart_widget == chart:
                 fw.close()
                 return
-
     def on_floating_window_closed(self, chart):
         # Remove from list
         self.floating_windows = [fw for fw in self.floating_windows if fw.chart_widget != chart]
@@ -1607,8 +1849,29 @@ class MainWindow(QWidget):
         # Re-integrate
         self.switch_layout(self.combo_layout.currentText())
 
+    def _get_chart_count(self):
+        if hasattr(self, "combo_chart_count"):
+            try:
+                return max(1, min(int(self.combo_chart_count.currentText()), len(self.charts)))
+            except ValueError:
+                pass
+        return len(self.charts)
+
+    def _get_enabled_charts(self):
+        return self.charts[:self._get_chart_count()]
+
+    def _get_attached_charts(self):
+        return [chart for chart in self._get_enabled_charts() if not chart.is_detached]
+
+    def _get_layout_charts(self, layout_name):
+        active_charts = self._get_attached_charts()
+        if layout_name == "Dual Vertical":
+            return active_charts[:2]
+        return active_charts
+
     def switch_layout(self, layout_name):
-        active_charts = [c for c in self.charts if not c.is_detached]
+        active_charts = self._get_attached_charts()
+        layout_charts = self._get_layout_charts(layout_name)
         for chart in active_charts:
             if chart.parent() is not None:
                 chart.setParent(None)
@@ -1617,17 +1880,17 @@ class MainWindow(QWidget):
             item = self.chart_container_layout.takeAt(0)
             widget = item.widget()
             if widget:
-                widget.setParent(None) 
-        
+                widget.setParent(None)
+
         self.tabs = None
-        
-        if layout_name == "Vertical":
+
+        if layout_name in ("Vertical", "Dual Vertical"):
             splitter = QSplitter(Qt.Orientation.Vertical)
-            for chart in active_charts:
+            for chart in layout_charts:
                 splitter.addWidget(chart)
                 chart.show()
             self.chart_container_layout.addWidget(splitter)
-            
+
         elif layout_name == "Grid 2x2":
             grid_widget = QWidget()
             grid = QGridLayout()
@@ -1636,7 +1899,7 @@ class MainWindow(QWidget):
             grid_widget.setLayout(grid)
 
             # Simple grid logic for dynamic number of charts
-            for i, chart in enumerate(active_charts):
+            for i, chart in enumerate(layout_charts):
                 row = i // 2
                 col = i % 2
                 grid.addWidget(chart, row, col)
@@ -1645,9 +1908,9 @@ class MainWindow(QWidget):
             grid.setRowStretch(1, 1)
             grid.setColumnStretch(0, 1)
             grid.setColumnStretch(1, 1)
-            
+
             self.chart_container_layout.addWidget(grid_widget)
-            
+
         elif layout_name == "Tabs":
             self.tabs = QTabWidget()
             self.tabs.setStyleSheet(
@@ -1661,35 +1924,48 @@ class MainWindow(QWidget):
                 "QTabBar::tab:hover { background: #252525; color: #d0d0d0; }"
                 "QTabWidget::pane { border-top: 1px solid #3a3a3a; }"
             )
-            for chart in active_charts:
-                # 获取当前显示的周期名作为标题
+            for chart in layout_charts:
                 title = chart.display_map.get(chart.current_period, chart.current_period)
                 self.tabs.addTab(chart, title)
                 chart.show()
             self.chart_container_layout.addWidget(self.tabs)
-            
-        # 切换布局仅重排容器，不强制重采样/重置视图
 
-    def load_data_file(self, file_path):
+        # Layout switching only reflows the containers.
+    def load_data_file(self, file_path, restore_time=None):
         self.engine.parquet_file = file_path
         self.engine.load_data()
-        if self.engine.df_ticks is not None:
-            total_ticks = len(self.engine.df_ticks)
-            if total_ticks > 100000:
-                self.current_time = self.engine.df_ticks.index[100000]
-            else:
-                self.current_time = self.engine.df_ticks.index[0]
+        if self.engine.df_ticks is None:
+            QMessageBox.critical(
+                self,
+                "Load Data Failed",
+                self.engine.last_load_error or "Failed to load the selected data file.",
+            )
+            return
 
-            if hasattr(self, 'date_edit'):
-                self._set_date_edit(self.current_time)
-            # 强制重置视图，确保K线居中显示
-            self.reset_charts_view()
-            if hasattr(self, 'replay_engine'):
-                self.replay_engine.initialize(
-                    self._get_replay_periods(),
-                    self.current_time,
-                    max_count_map=self._get_replay_max_count_map(),
-                )
+        total_ticks = len(self.engine.df_ticks)
+        if total_ticks > 100000:
+            self.current_time = self.engine.df_ticks.index[100000]
+        else:
+            self.current_time = self.engine.df_ticks.index[0]
+
+        if hasattr(self, 'date_edit'):
+            self._update_date_edit_bounds()
+            self._set_date_edit(self.current_time)
+        self.reset_charts_view()
+        if hasattr(self, 'replay_engine'):
+            self.replay_engine.initialize(
+                self._get_replay_periods(),
+                self.current_time,
+                max_count_map=self._get_replay_max_count_map(),
+            )
+        if restore_time is not None:
+            self.jump_to_time(restore_time)
+        if getattr(self.engine, "last_load_warnings", None):
+            QMessageBox.warning(
+                self,
+                "Data Load Warning",
+                "\n\n".join(self.engine.last_load_warnings),
+            )
 
     def open_file_dialog(self):
         file_name, _ = QFileDialog.getOpenFileName(
@@ -1770,10 +2046,10 @@ class MainWindow(QWidget):
                 target_idx = len(df) - 1
         else:
             df = self.engine.get_candles(chart.current_period) 
-            # 全量模式下，根据当前时间找到对应的 index
+            # 鍏ㄩ噺妯″紡涓嬶紝鏍规嵁褰撳墠鏃堕棿鎵惧埌瀵瑰簲鐨?index
             if df is not None and not df.empty:
                 search_time = self.current_time
-                # 如果 K 线索引是 Naive (因为 NY Close 转换)，而 current_time 是 Aware，则去除时区
+                # 濡傛灉 K 绾跨储寮曟槸 Naive (鍥犱负 NY Close 杞崲)锛岃€?current_time 鏄?Aware锛屽垯鍘婚櫎鏃跺尯
                 if df.index.tz is None and search_time.tzinfo is not None:
                     search_time = search_time.replace(tzinfo=None)
                 
@@ -1782,7 +2058,7 @@ class MainWindow(QWidget):
         chart.update_chart(df, auto_scale=auto_scale, highlight_idx=target_idx)
 
     def refresh_all_charts(self, auto_scale=False):
-        for chart in self.charts:
+        for chart in self._get_enabled_charts():
             self.refresh_single_chart(chart, auto_scale=auto_scale)
 
     def on_timer_tick(self):
@@ -1807,3 +2083,6 @@ class MainWindow(QWidget):
         self._set_date_edit(self.current_time)
         self.date_edit.blockSignals(False)
         self.refresh_all_charts()
+
+
+

@@ -2,6 +2,14 @@ import os
 import pandas as pd
 import numpy as np
 
+from engine.data_validation import (
+    CURRENT_CANDLE_INDICATOR_COLUMNS,
+    inspect_duckdb_schema,
+    normalize_candle_dataframe,
+    normalize_tick_dataframe,
+    validate_duckdb_candle_table,
+)
+
 class DataEngine:
     def __init__(self, parquet_file="data/ticks.parquet"):
         self.parquet_file = parquet_file
@@ -11,11 +19,17 @@ class DataEngine:
         self._candles_cache = {}
         self._duckdb_path = None
         self._duckdb_candles_tables = set()
+        self.last_load_error = None
+        self.last_load_warnings = []
         self.load_data()
 
     def load_data(self):
         """加载 Tick 数据并进行基础处理"""
         print(f"Loading data from {self.parquet_file}...")
+        self.last_load_error = None
+        self.last_load_warnings = []
+        self.df_ticks = None
+        self._candles_cache.clear()
         try:
             if not self.parquet_file:
                 return
@@ -25,29 +39,54 @@ class DataEngine:
                 try:
                     import duckdb
                 except Exception as e:
+                    self.last_load_error = f"Error loading DuckDB: {e}"
                     print(f"Error loading DuckDB: {e}")
                     return
 
                 self._duckdb_path = self.parquet_file
                 con = duckdb.connect(self.parquet_file, read_only=True)
-                tables = [t[0] for t in con.execute("SHOW TABLES").fetchall()]
-                self._duckdb_candles_tables = {t for t in tables if t.startswith("candles_")}
-                if self._duckdb_candles_tables:
-                    periods = [self._period_from_table(t) for t in sorted(self._duckdb_candles_tables)]
-                    print(f"DuckDB candle tables: {', '.join(periods)}")
+                try:
+                    report = inspect_duckdb_schema(con, self.parquet_file)
+                    self._duckdb_candles_tables = report.candle_tables
+                    if self._duckdb_candles_tables:
+                        periods = [self._period_from_table(t) for t in sorted(self._duckdb_candles_tables)]
+                        print(f"DuckDB candle tables: {', '.join(periods)}")
+                        if "candles_1M" in self._duckdb_candles_tables and "candles_1m" not in self._duckdb_candles_tables:
+                            warning = (
+                                "Legacy DuckDB naming detected: candles_1M exists but candles_1m is missing. "
+                                "Older converters let the monthly table collide with the 1-minute table. "
+                                "1-minute candles will be rebuilt from ticks; rebuild the DuckDB to restore the precomputed 1-minute table."
+                            )
+                            self.last_load_warnings.append(warning)
+                            print(f"Warning: {warning}")
+                        valid_candle_tables = set()
+                        for table_name in sorted(self._duckdb_candles_tables):
+                            try:
+                                validate_duckdb_candle_table(
+                                    con,
+                                    self.parquet_file,
+                                    table_name,
+                                    allow_gap_rows=self._table_allows_gap_rows(table_name),
+                                )
+                            except Exception as e:
+                                warning = (
+                                    f"Skipping invalid precomputed candle table {table_name}: {e}. "
+                                    "This timeframe will be rebuilt from ticks when requested."
+                                )
+                                self.last_load_warnings.append(warning)
+                                print(f"Warning: {warning}")
+                                continue
+                            valid_candle_tables.add(table_name)
+                        self._duckdb_candles_tables = valid_candle_tables
 
-                df = con.execute("SELECT * FROM ticks ORDER BY timestamp").df()
-                con.close()
-                if "timestamp" not in df.columns:
-                    print("Error loading DuckDB: missing 'timestamp' column in ticks table. Please rebuild DuckDB.")
-                    return
-                df["timestamp"] = pd.to_datetime(df["timestamp"])
-                df.set_index("timestamp", inplace=True)
-                self.df_ticks = df
+                    df = con.execute("SELECT * FROM ticks ORDER BY timestamp").df()
+                finally:
+                    con.close()
+                self.df_ticks = normalize_tick_dataframe(df, f"{self.parquet_file}::ticks")
             else:
                 self._duckdb_path = None
                 self._duckdb_candles_tables = set()
-                self.df_ticks = pd.read_parquet(self.parquet_file)
+                self.df_ticks = normalize_tick_dataframe(pd.read_parquet(self.parquet_file), self.parquet_file)
             
             # 1. 时区处理
             # 用户反馈数据源(QDM)已导出为美东时间 (America/New_York)
@@ -59,33 +98,50 @@ class DataEngine:
                 self.df_ticks.index = self.df_ticks.index.tz_convert('America/New_York')
             
             self.df_ticks.sort_index(inplace=True)
-            self._candles_cache.clear()
             
             print(f"Loaded {len(self.df_ticks)} ticks. Time range: {self.df_ticks.index[0]} - {self.df_ticks.index[-1]}")
             
         except Exception as e:
+            self.last_load_error = str(e)
+            self.df_ticks = None
+            self._candles_cache.clear()
             print(f"Error loading data: {e}")
 
     def _duckdb_table_for_timeframe(self, timeframe):
         tf = str(timeframe).strip().lower()
+        candidates = []
         if tf.endswith("s"):
-            suffix = tf
+            candidates.append(f"candles_{tf}")
         elif tf.endswith("min"):
-            suffix = f"{tf[:-3]}m"
+            candidates.append(f"candles_{tf[:-3]}m")
         elif tf.endswith("h"):
-            suffix = tf
+            candidates.append(f"candles_{tf}")
         elif tf.endswith("d"):
-            suffix = f"{tf[:-1]}D"
+            candidates.append(f"candles_{tf[:-1]}D")
         elif tf.endswith("w"):
-            suffix = f"{tf[:-1]}W"
+            candidates.append(f"candles_{tf[:-1]}W")
         elif tf.endswith("m") and not tf.endswith("min"):
-            suffix = f"{tf[:-1]}M"
+            candidates.append(f"candles_{tf[:-1]}mo")
+            candidates.append(f"candles_{tf[:-1]}M")
         else:
             return None
-        return f"candles_{suffix}"
+        for table_name in candidates:
+            if table_name in self._duckdb_candles_tables:
+                return table_name
+        return candidates[0]
+
+    def _table_allows_gap_rows(self, table_name):
+        suffix = table_name.replace("candles_", "").lower()
+        if suffix.endswith("s") and suffix[:-1].isdigit():
+            return True
+        if suffix.endswith("m") and suffix[:-1].isdigit():
+            return int(suffix[:-1]) > 60
+        return False
 
     def _period_from_table(self, table_name):
         suffix = table_name.replace("candles_", "")
+        if suffix.endswith("mo") and suffix[:-2].isdigit():
+            return f"{suffix[:-2]}M"
         if suffix.endswith("m") and suffix[:-1].isdigit():
             return f"{suffix[:-1]}min"
         return suffix
@@ -108,18 +164,13 @@ class DataEngine:
                     con = duckdb.connect(self._duckdb_path, read_only=True)
                     df = con.execute(f"SELECT * FROM {table} ORDER BY timestamp").df()
                     con.close()
-                    if "timestamp" not in df.columns and "time" in df.columns:
-                        df = df.rename(columns={"time": "timestamp"})
-                    if "timestamp" not in df.columns and "datetime" in df.columns:
-                        df = df.rename(columns={"datetime": "timestamp"})
-                    if "timestamp" in df.columns:
-                        df["timestamp"] = pd.to_datetime(df["timestamp"])
-                        df.set_index("timestamp", inplace=True)
-                    # Backward compatibility: old DuckDB may miss newly added EMA columns.
-                    for span in [100, 240]:
-                        col = f"EMA{span}"
-                        if col not in df.columns and "close" in df.columns:
-                            df[col] = df["close"].ewm(span=span, adjust=False).mean()
+                    df = normalize_candle_dataframe(
+                        df,
+                        f"{self._duckdb_path}::{table}",
+                        allow_gap_rows=table.endswith("s"),
+                    )
+                    if any(col not in df.columns for col in CURRENT_CANDLE_INDICATOR_COLUMNS):
+                        df = self._calculate_indicators(df)
                     self._candles_cache[timeframe] = df
                     return df
                 except Exception as e:
@@ -287,6 +338,9 @@ class DataEngine:
 
     def _should_dropna(self, timeframe):
         tf = str(timeframe).strip().lower()
+        if tf.endswith("me"):
+            base = tf[:-2]
+            return base.isdigit()
         if tf.endswith("min"):
             try:
                 minutes = int(tf[:-3])
