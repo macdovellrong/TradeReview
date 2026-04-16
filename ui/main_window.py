@@ -17,6 +17,11 @@ from ui.chart_performance import (
     get_crosshair_sync_targets,
     should_refresh_visible_slice,
 )
+from ui.drawings.dialogs import FibConfigDialog
+from ui.drawings.fib_config import default_fib_settings, load_fib_settings, save_fib_settings
+from ui.drawings.renderers import render_spec_items
+from ui.drawings.specs import normalize_drawing_spec
+from ui.drawings.tools import DrawingSession, TOOL_DEFINITIONS
 from ui.session_state import SessionState, load_session_state, save_session_state
 from ui.time_navigation import clamp_timestamp, normalize_jump_timestamp, resolve_chart_target
 
@@ -161,6 +166,7 @@ class ChartWidget(QWidget):
     sig_drawing_request = pyqtSignal(object)
     sig_drawing_delete_request = pyqtSignal(int)
     sig_drawing_clear_request = pyqtSignal()
+    sig_fib_config_requested = pyqtSignal()
     # 淇″彿锛氬懆鏈熸敼鍙樻椂鍙戝皠 (str)
     sig_period_changed = pyqtSignal(str)
     # 淇″彿锛氳姹傚垎绂?杩樺師
@@ -284,10 +290,16 @@ class ChartWidget(QWidget):
         self.btn_draw_vline = QPushButton("V")
         self.btn_draw_line = QPushButton("Line")
         self.btn_draw_fib = QPushButton("Fib")
+        self.btn_draw_fib_ext = QPushButton("Fib Ext")
+        self.btn_draw_fib_config = QPushButton("Fib Config")
         self.btn_draw_clear = QPushButton("Clear")
         for btn in [self.btn_draw_select, self.btn_draw_hline, self.btn_draw_vline,
-                    self.btn_draw_line, self.btn_draw_fib, self.btn_draw_clear]:
-            btn.setFixedSize(44, 30)
+                    self.btn_draw_line, self.btn_draw_fib, self.btn_draw_fib_ext,
+                    self.btn_draw_fib_config, self.btn_draw_clear]:
+            width = 44
+            if btn in (self.btn_draw_fib_ext, self.btn_draw_fib_config):
+                width = 76
+            btn.setFixedSize(width, 30)
             btn.setStyleSheet("""
                 QPushButton {
                     border: 1px solid #444;
@@ -306,6 +318,8 @@ class ChartWidget(QWidget):
         self.btn_draw_vline.clicked.connect(lambda: self.set_draw_mode("vline"))
         self.btn_draw_line.clicked.connect(lambda: self.set_draw_mode("line"))
         self.btn_draw_fib.clicked.connect(lambda: self.set_draw_mode("fib"))
+        self.btn_draw_fib_ext.clicked.connect(lambda: self.set_draw_mode("fib_ext"))
+        self.btn_draw_fib_config.clicked.connect(self.on_open_fib_config)
         self.btn_draw_clear.clicked.connect(self.on_clear_drawings)
 
         self.toolbar_layout.addWidget(self.btn_draw_select)
@@ -313,6 +327,8 @@ class ChartWidget(QWidget):
         self.toolbar_layout.addWidget(self.btn_draw_vline)
         self.toolbar_layout.addWidget(self.btn_draw_line)
         self.toolbar_layout.addWidget(self.btn_draw_fib)
+        self.toolbar_layout.addWidget(self.btn_draw_fib_ext)
+        self.toolbar_layout.addWidget(self.btn_draw_fib_config)
         self.toolbar_layout.addWidget(self.btn_draw_clear)
 
         # 鍒嗙鎸夐挳
@@ -535,8 +551,9 @@ class ChartWidget(QWidget):
         self.current_time_values = None
         self.measure_active = False
         self.measure_start_y = None
+        self.fib_settings = default_fib_settings()
         self.draw_mode = None
-        self.draw_first_point = None
+        self.active_drawing_session = None
         self.draw_preview_items = []
         self.drawings = {}
         self.selected_drawing_id = None
@@ -760,16 +777,19 @@ class ChartWidget(QWidget):
             mousePoint = self.ax.vb.mapSceneToView(pos)
 
             # 缁樺浘棰勮
-            if self.draw_mode in ("line", "fib") and self.draw_first_point is not None:
-                x0, y0 = self.draw_first_point
+            if self.active_drawing_session is not None:
                 self._clear_preview()
-                preview = pg.PlotCurveItem(
-                    x=[x0, mousePoint.x()],
-                    y=[y0, mousePoint.y()],
-                    pen=pg.mkPen("#00E5FF", width=2, style=Qt.PenStyle.DashLine),
+                preview_spec = self.active_drawing_session.build_preview_spec(
+                    self.get_datetime_from_x(mousePoint.x()),
+                    float(mousePoint.y()),
                 )
-                self.ax.addItem(preview)
-                self.draw_preview_items.append(preview)
+                if preview_spec is not None:
+                    self.draw_preview_items = render_spec_items(
+                        self.ax,
+                        preview_spec,
+                        self._x_from_datetime,
+                        preview=True,
+                    )
 
             mods = QApplication.keyboardModifiers()
             buttons = QApplication.mouseButtons()
@@ -917,12 +937,33 @@ class ChartWidget(QWidget):
         if self.selected_drawing_id is not None:
             self.sig_drawing_delete_request.emit(int(self.selected_drawing_id))
 
+    def set_fib_settings(self, fib_settings):
+        self.fib_settings = fib_settings
+        if self.draw_mode in ("fib", "fib_ext"):
+            self.set_draw_mode(self.draw_mode)
+
+    def on_open_fib_config(self):
+        self.sig_fib_config_requested.emit()
+
     def on_clear_drawings(self):
         self.sig_drawing_clear_request.emit()
 
+    def _snapshot_for_tool(self, mode):
+        if mode == "fib":
+            return {"levels": self.fib_settings.retracement.effective_levels}
+        if mode == "fib_ext":
+            return {"levels": self.fib_settings.extension.effective_levels}
+        return None
+
     def set_draw_mode(self, mode):
         self.draw_mode = mode
-        self.draw_first_point = None
+        if mode is None:
+            self.active_drawing_session = None
+        else:
+            self.active_drawing_session = DrawingSession(
+                TOOL_DEFINITIONS[mode],
+                config_snapshot=self._snapshot_for_tool(mode),
+            )
         self._clear_preview()
 
     def _clear_preview(self):
@@ -934,107 +975,23 @@ class ChartWidget(QWidget):
         self.draw_preview_items = []
 
     def _handle_draw_click(self, scene_pos):
+        if self.active_drawing_session is None:
+            return
         mouse_point = self.ax.vb.mapSceneToView(scene_pos)
-        if self.draw_mode in ("hline", "vline"):
-            spec = {
-                "type": self.draw_mode,
-                "p1_dt": self.get_datetime_from_x(mouse_point.x()),
-                "p1_price": float(mouse_point.y()),
-            }
+        spec = self.active_drawing_session.add_point(
+            self.get_datetime_from_x(mouse_point.x()),
+            float(mouse_point.y()),
+        )
+        if spec is not None:
             self.sig_drawing_request.emit(spec)
             self.set_draw_mode(None)
-            return
-
-        if self.draw_mode in ("line", "fib"):
-            if self.draw_first_point is None:
-                self.draw_first_point = (mouse_point.x(), mouse_point.y())
-                return
-            x0, y0 = self.draw_first_point
-            dt0 = self.get_datetime_from_x(x0)
-            dt1 = self.get_datetime_from_x(mouse_point.x())
-            spec = {
-                "type": self.draw_mode,
-                "p1_dt": dt0,
-                "p1_price": float(y0),
-                "p2_dt": dt1,
-                "p2_price": float(mouse_point.y()),
-            }
-            self.sig_drawing_request.emit(spec)
-            self.set_draw_mode(None)
-            return
 
     def add_drawing(self, spec):
+        spec = normalize_drawing_spec(spec)
         draw_id = spec.get("id")
         if draw_id is None:
             return
-        dtype = spec.get("type")
-        p1_dt = spec.get("p1_dt")
-        p1_price = spec.get("p1_price")
-        p2_dt = spec.get("p2_dt")
-        p2_price = spec.get("p2_price")
-
-        items = []
-        if dtype == "hline":
-            line = pg.InfiniteLine(angle=0, pos=p1_price, pen=pg.mkPen("#FF4444", width=1))
-            self.ax.addItem(line)
-            line._is_drawing = True
-            line._drawing_id = draw_id
-            items.append(line)
-        elif dtype == "vline":
-            x1 = self._x_from_datetime(p1_dt)
-            if x1 is not None:
-                line = pg.InfiniteLine(angle=90, pos=x1, pen=pg.mkPen("#FF4444", width=1))
-                self.ax.addItem(line)
-                line._is_drawing = True
-                line._drawing_id = draw_id
-                items.append(line)
-        elif dtype == "line":
-            x1 = self._x_from_datetime(p1_dt)
-            x2 = self._x_from_datetime(p2_dt)
-            if x1 is not None and x2 is not None:
-                curve = pg.PlotCurveItem(x=[x1, x2], y=[p1_price, p2_price], pen=pg.mkPen("#00E5FF", width=2.5))
-                self.ax.addItem(curve)
-                curve._is_drawing = True
-                curve._drawing_id = draw_id
-                items.append(curve)
-        elif dtype == "fib":
-            x1 = self._x_from_datetime(p1_dt)
-            x2 = self._x_from_datetime(p2_dt)
-            if x1 is not None and x2 is not None:
-                start_price = p1_price
-                end_price = p2_price
-                x_left = min(x1, x2)
-                x_right = max(x1, x2)
-
-                edge_pen = pg.mkPen("#FFD54A", width=2.0)
-                for y in (start_price, end_price):
-                    edge = pg.PlotCurveItem(x=[x_left, x_right], y=[y, y], pen=edge_pen)
-                    self.ax.addItem(edge)
-                    edge._is_drawing = True
-                    edge._drawing_id = draw_id
-                    items.append(edge)
-
-                levels = [0.236, 0.5, 0.618, 0.7, 0.8]
-                for lv in levels:
-                    y = end_price + (start_price - end_price) * lv
-                    curve = pg.PlotCurveItem(x=[x_left, x_right], y=[y, y], pen=pg.mkPen("#FFD54A", width=2.2, style=Qt.PenStyle.DashLine))
-                    self.ax.addItem(curve)
-                    curve._is_drawing = True
-                    curve._drawing_id = draw_id
-                    items.append(curve)
-                    label = pg.TextItem(
-                        text=f"{lv:.3f}  {y:.3f}",
-                        color="#FFD54A",
-                        fill=pg.mkBrush(20, 20, 20, 220),
-                        anchor=(0, 0.5),
-                    )
-                    label.setPos(x_right, y)
-                    label.setZValue(21)
-                    label._is_drawing = True
-                    label._drawing_id = draw_id
-                    self.ax.addItem(label, ignoreBounds=True)
-                    items.append(label)
-
+        items = render_spec_items(self.ax, spec, self._x_from_datetime)
         if items:
             self.drawings[draw_id] = items
 
@@ -1308,6 +1265,7 @@ class MainWindow(QWidget):
         self.engine = DataEngine(parquet_file=None) 
         self.replay_engine = ReplayEngine(self.engine)
         self.settings = QSettings("TradeReview", "TradeReview")
+        self.fib_settings = load_fib_settings(self.settings)
         self.current_time = datetime.datetime.now()
         self.is_playing = False
         self.replay_speed = 60 
@@ -1569,6 +1527,7 @@ class MainWindow(QWidget):
             chart = ChartWidget(display)
             # 璁剧疆鍒濆鍛ㄦ湡骞惰Е鍙戝姞杞?
             chart.set_period(period)
+            chart.set_fib_settings(self.fib_settings)
             
             # 鐩戝惉鍛ㄦ湡鏀瑰彉锛岃Е鍙戦噸缁?+ 鏇存柊 Tab 鏍囬
             chart.sig_period_changed.connect(lambda p, c=chart: self.on_chart_period_changed(c, p))
@@ -1588,6 +1547,7 @@ class MainWindow(QWidget):
             chart.sig_drawing_request.connect(self.on_drawing_request)
             chart.sig_drawing_delete_request.connect(self.on_drawing_delete)
             chart.sig_drawing_clear_request.connect(self.on_drawing_clear)
+            chart.sig_fib_config_requested.connect(self.on_open_fib_config)
             self.charts.append(chart)
 
     def set_replay_start_time(self, target_dt):
@@ -1680,6 +1640,7 @@ class MainWindow(QWidget):
     def on_drawing_request(self, spec):
         draw_id = getattr(self, "_drawing_id_counter", 0) + 1
         self._drawing_id_counter = draw_id
+        spec = normalize_drawing_spec(spec)
         spec = dict(spec)
         spec["id"] = draw_id
         for chart in self.charts:
@@ -1692,6 +1653,16 @@ class MainWindow(QWidget):
     def on_drawing_clear(self):
         for chart in self.charts:
             chart.clear_drawings()
+
+    def on_open_fib_config(self):
+        dialog = FibConfigDialog(self.fib_settings, self)
+        if not dialog.exec():
+            return
+        fib_settings = dialog.build_settings()
+        save_fib_settings(self.settings, fib_settings)
+        self.fib_settings = fib_settings
+        for chart in self.charts:
+            chart.set_fib_settings(self.fib_settings)
 
     def create_control_panel(self):
         panel = QHBoxLayout()
