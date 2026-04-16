@@ -6,6 +6,7 @@ __pycache__/
 *.log
 *.png
 .vscode/
+.worktrees/
 data/
 
 # local data files (keep only on local machine)
