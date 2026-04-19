@@ -10,8 +10,11 @@ class CrosshairSyncController:
         if chart in self._charts:
             self._charts.remove(chart)
 
+    def iter_charts(self):
+        return iter(tuple(self._charts))
+
     def sync_from(self, source_chart, timestamp, price):
-        for chart in list(self._charts):
+        for chart in self.iter_charts():
             if chart is source_chart:
                 continue
             chart.sync_crosshair(timestamp, price)

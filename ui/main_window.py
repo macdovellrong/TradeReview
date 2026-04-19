@@ -1851,7 +1851,7 @@ class MainWindow(QWidget):
         enabled_set = set(enabled_charts)
 
         # Keep crosshair sync scoped to enabled charts only.
-        for chart in list(self.crosshair_sync_controller._charts):
+        for chart in list(self.crosshair_sync_controller.iter_charts()):
             if chart not in enabled_set:
                 self.crosshair_sync_controller.unregister_chart(chart)
 

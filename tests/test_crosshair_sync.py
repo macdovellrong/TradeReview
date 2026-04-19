@@ -64,6 +64,16 @@ class CrosshairSyncControllerTests(unittest.TestCase):
 
         self.assertEqual(target.sync_calls, [("2026-04-19T09:30:00", 123.45)])
 
+    def test_iter_charts_returns_registered_charts_in_order(self):
+        controller = CrosshairSyncController()
+        first = DummyChart("first")
+        second = DummyChart("second")
+
+        controller.register_chart(first)
+        controller.register_chart(second)
+
+        self.assertEqual(list(controller.iter_charts()), [first, second])
+
 
 if __name__ == "__main__":
     unittest.main()
