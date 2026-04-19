@@ -15,6 +15,7 @@ TOOL_DEFINITIONS = {
     "line": ToolDefinition(tool_id="line", point_count=2),
     "fib": ToolDefinition(tool_id="fib", point_count=2),
     "fib_ext": ToolDefinition(tool_id="fib_ext", point_count=3),
+    "rect": ToolDefinition(tool_id="rect", point_count=2),
 }
 
 
@@ -39,7 +40,7 @@ class DrawingSession:
             return None
 
         preview_points = [*self.points, {"dt": dt, "price": float(price)}]
-        if self.tool.tool_id in {"line", "fib"} and len(self.points) == 1:
+        if self.tool.point_count == 2 and len(self.points) == 1:
             spec = {"type": self.tool.tool_id, "points": preview_points}
         elif self.tool.tool_id == "fib_ext" and len(self.points) == 1:
             spec = {"type": "line", "points": preview_points}

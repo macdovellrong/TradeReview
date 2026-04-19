@@ -37,6 +37,15 @@ class DrawingToolsTests(unittest.TestCase):
         self.assertEqual(spec["type"], "line")
         self.assertEqual(len(spec["points"]), 2)
 
+    def test_rect_session_completes_after_two_points(self):
+        session = DrawingSession(TOOL_DEFINITIONS["rect"])
+
+        self.assertIsNone(session.add_point(datetime.datetime(2026, 4, 16, 9, 30), 100.0))
+        spec = session.add_point(datetime.datetime(2026, 4, 16, 10, 0), 110.0)
+
+        self.assertEqual(spec["type"], "rect")
+        self.assertEqual(len(spec["points"]), 2)
+
     def test_fib_extension_session_snapshots_levels_after_third_point(self):
         session = DrawingSession(TOOL_DEFINITIONS["fib_ext"], config_snapshot={"levels": [1.0, 1.618]})
         session.add_point(datetime.datetime(2026, 4, 16, 9, 30), 100.0)
@@ -57,6 +66,17 @@ class DrawingToolsTests(unittest.TestCase):
         self.assertEqual(spec["type"], "fib_ext")
         self.assertEqual(spec["config_snapshot"]["levels"], [1.0, 1.618])
         self.assertEqual(len(spec["points"]), 3)
+
+    def test_rect_preview_uses_current_mouse_position_as_second_point(self):
+        session = DrawingSession(TOOL_DEFINITIONS["rect"])
+        session.add_point(datetime.datetime(2026, 4, 16, 9, 30), 100.0)
+
+        spec = session.build_preview_spec(datetime.datetime(2026, 4, 16, 10, 0), 110.0)
+
+        self.assertEqual(spec["type"], "rect")
+        self.assertEqual(len(spec["points"]), 2)
+        self.assertEqual(spec["points"][0]["price"], 100.0)
+        self.assertEqual(spec["points"][1]["price"], 110.0)
 
 
 if __name__ == "__main__":
