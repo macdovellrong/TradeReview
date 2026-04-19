@@ -14,9 +14,9 @@ from engine.data_engine import DataEngine
 from engine.replay_engine import ReplayEngine
 from ui.chart_performance import (
     build_visible_slice_window,
-    get_crosshair_sync_targets,
     should_refresh_visible_slice,
 )
+from ui.crosshair_sync import CrosshairSyncController
 from ui.drawings.dialogs import FibConfigDialog
 from ui.drawings.fib_config import default_fib_settings, load_fib_settings, save_fib_settings
 from ui.drawings.renderers import render_spec_items
@@ -1259,7 +1259,7 @@ class FloatingChartWindow(QWidget):
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Gemini Trade Review")
+        self.setWindowTitle("TradeReview")
         self.resize(1400, 950)
         
         self.engine = DataEngine(parquet_file=None) 
@@ -1269,6 +1269,7 @@ class MainWindow(QWidget):
         self.current_time = datetime.datetime.now()
         self.is_playing = False
         self.replay_speed = 60 
+        self.crosshair_sync_controller = CrosshairSyncController()
 
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
@@ -1543,7 +1544,10 @@ class MainWindow(QWidget):
             chart.sig_set_replay_start.connect(self.set_replay_start_time)
             
             # 杩炴帴鍏夋爣鍚屾淇″彿
-            chart.sig_mouse_moved_with_price.connect(partial(self.sync_all_charts_crosshair, chart))
+            self.crosshair_sync_controller.register_chart(chart)
+            chart.sig_mouse_moved_with_price.connect(
+                partial(self.crosshair_sync_controller.sync_from, chart)
+            )
             chart.sig_drawing_request.connect(self.on_drawing_request)
             chart.sig_drawing_delete_request.connect(self.on_drawing_delete)
             chart.sig_drawing_clear_request.connect(self.on_drawing_clear)
@@ -1634,8 +1638,7 @@ class MainWindow(QWidget):
             chart.sync_vline(timestamp)
 
     def sync_all_charts_crosshair(self, source_chart, timestamp, price):
-        for chart in get_crosshair_sync_targets(self._get_enabled_charts(), source_chart):
-            chart.sync_crosshair(timestamp, price)
+        self.crosshair_sync_controller.sync_from(source_chart, timestamp, price)
 
     def on_drawing_request(self, spec):
         draw_id = getattr(self, "_drawing_id_counter", 0) + 1
