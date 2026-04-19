@@ -52,6 +52,15 @@ class MainWindowCrosshairSyncTests(unittest.TestCase):
 
         sync_crosshair.assert_called_once_with(123.0, 456.0)
 
+    def test_chart_mouse_move_delegates_to_controller(self):
+        window = self.create_window()
+        source_chart = window.charts[0]
+
+        with patch.object(window.crosshair_sync_controller, "sync_from") as sync_from:
+            source_chart.sig_mouse_moved_with_price.emit(222.0, 333.0)
+
+        sync_from.assert_called_once_with(source_chart, 222.0, 333.0)
+
     def test_detached_chart_emits_crosshair_back_to_attached_chart(self):
         window = self.create_window()
         source_chart = window.charts[0]

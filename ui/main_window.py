@@ -1546,7 +1546,7 @@ class MainWindow(QWidget):
             # 杩炴帴鍏夋爣鍚屾淇″彿
             self.crosshair_sync_controller.register_chart(chart)
             chart.sig_mouse_moved_with_price.connect(
-                partial(self.crosshair_sync_controller.sync_from, chart)
+                partial(self.sync_all_charts_crosshair, chart)
             )
             chart.sig_drawing_request.connect(self.on_drawing_request)
             chart.sig_drawing_delete_request.connect(self.on_drawing_delete)
