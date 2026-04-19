@@ -1554,6 +1554,8 @@ class MainWindow(QWidget):
             chart.sig_fib_config_requested.connect(self.on_open_fib_config)
             self.charts.append(chart)
 
+        self.refresh_crosshair_sync_targets()
+
     def set_replay_start_time(self, target_dt):
         """UI helper."""
         if self.engine.df_ticks is None:
@@ -1804,6 +1806,7 @@ class MainWindow(QWidget):
                 max_count_map=self._get_replay_max_count_map(),
             )
 
+        self.refresh_crosshair_sync_targets()
         self.switch_layout(self.combo_layout.currentText())
         self.refresh_all_charts(auto_scale=True)
 
@@ -1842,6 +1845,18 @@ class MainWindow(QWidget):
         if layout_name == "Dual Vertical":
             return active_charts[:2]
         return active_charts
+
+    def refresh_crosshair_sync_targets(self):
+        enabled_charts = list(self._get_enabled_charts())
+        enabled_set = set(enabled_charts)
+
+        # Keep crosshair sync scoped to enabled charts only.
+        for chart in list(self.crosshair_sync_controller._charts):
+            if chart not in enabled_set:
+                self.crosshair_sync_controller.unregister_chart(chart)
+
+        for chart in enabled_charts:
+            self.crosshair_sync_controller.register_chart(chart)
 
     def switch_layout(self, layout_name):
         active_charts = self._get_attached_charts()

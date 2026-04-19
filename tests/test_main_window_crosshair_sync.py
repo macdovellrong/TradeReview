@@ -22,8 +22,13 @@ class MainWindowCrosshairSyncTests(unittest.TestCase):
         with patch("ui.main_window.QTimer.singleShot", lambda *args, **kwargs: None):
             window = MainWindow()
         window.timer.stop()
+        def close_floating_windows():
+            for floating_window in list(window.floating_windows):
+                floating_window.close()
+            window.floating_windows.clear()
+
         self.addCleanup(window.close)
-        self.addCleanup(lambda: window.floating_windows.clear())
+        self.addCleanup(close_floating_windows)
         return window
 
     def test_window_title_is_tradereview(self):
@@ -56,6 +61,27 @@ class MainWindowCrosshairSyncTests(unittest.TestCase):
             source_chart.sig_mouse_moved_with_price.emit(789.0, 321.0)
 
         sync_crosshair.assert_called_once_with(789.0, 321.0)
+
+    def test_disabled_charts_do_not_receive_crosshair_sync(self):
+        window = self.create_window()
+        window.combo_chart_count.setCurrentText("2")
+        window.on_chart_count_changed("2")
+
+        source_chart = window.charts[0]
+        enabled_target = window.charts[1]
+        disabled_chart_1 = window.charts[2]
+        disabled_chart_2 = window.charts[3]
+
+        with (
+            patch.object(enabled_target, "sync_crosshair") as enabled_sync,
+            patch.object(disabled_chart_1, "sync_crosshair") as disabled_sync_1,
+            patch.object(disabled_chart_2, "sync_crosshair") as disabled_sync_2,
+        ):
+            source_chart.sig_mouse_moved_with_price.emit(111.0, 222.0)
+
+        enabled_sync.assert_called_once_with(111.0, 222.0)
+        disabled_sync_1.assert_not_called()
+        disabled_sync_2.assert_not_called()
 
 
 if __name__ == "__main__":
