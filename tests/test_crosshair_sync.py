@@ -51,6 +51,19 @@ class CrosshairSyncControllerTests(unittest.TestCase):
         self.assertEqual(source.sync_calls, [])
         self.assertEqual(target.sync_calls, [])
 
+    def test_register_chart_deduplicates_sync_targets(self):
+        controller = CrosshairSyncController()
+        source = DummyChart("source")
+        target = DummyChart("target")
+
+        controller.register_chart(source)
+        controller.register_chart(target)
+        controller.register_chart(target)
+
+        controller.sync_from(source, "2026-04-19T09:30:00", 123.45)
+
+        self.assertEqual(target.sync_calls, [("2026-04-19T09:30:00", 123.45)])
+
 
 if __name__ == "__main__":
     unittest.main()
