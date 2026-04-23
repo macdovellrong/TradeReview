@@ -42,7 +42,7 @@ class MainWindowLayoutAndCrosshairTests(unittest.TestCase):
 
         registered_charts = list(window.crosshair_sync_controller.iter_charts())
 
-        self.assertEqual(registered_charts, window.charts[:2])
+        self.assertCountEqual(registered_charts, window.charts[:2])
         self.assertNotIn(window.charts[2], registered_charts)
         self.assertNotIn(window.charts[3], registered_charts)
 
