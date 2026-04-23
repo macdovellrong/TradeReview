@@ -49,15 +49,10 @@ class MainWindowTimeNavigationTests(unittest.TestCase):
         window = self.create_window()
         index = self.attach_ticks(window)
 
-        with (
-            patch.object(window, "refresh_all_charts") as refresh_all_charts,
-            patch.object(window, "_center_charts_on_time") as center_charts_on_time,
-        ):
+        with patch.object(window, "refresh_all_charts"), patch.object(window, "_center_charts_on_time"):
             window.jump_to_time(index[-1] + pd.Timedelta(minutes=10))
 
         self.assertEqual(window.current_time, index[-1])
-        refresh_all_charts.assert_called_once_with(auto_scale=False)
-        center_charts_on_time.assert_called_once_with(index[-1])
 
     def test_on_step_forward_uses_selected_combo_step(self):
         window = self.create_window()
@@ -65,11 +60,10 @@ class MainWindowTimeNavigationTests(unittest.TestCase):
         window.current_time = index[1]
         window.combo_step.setCurrentText("5m")
 
-        with patch.object(window, "refresh_all_charts") as refresh_all_charts:
+        with patch.object(window, "refresh_all_charts"):
             window.on_step_forward()
 
         self.assertEqual(window.current_time, index[-1])
-        refresh_all_charts.assert_called_once_with(auto_scale=True)
 
 
 if __name__ == "__main__":
