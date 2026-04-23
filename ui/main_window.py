@@ -17,6 +17,7 @@ from ui.chart_performance import (
     build_visible_slice_window,
     should_refresh_visible_slice,
 )
+from ui.chart_window import FloatingChartWindow
 from ui.crosshair_sync import CrosshairSyncController
 from ui.drawings.dialogs import FibConfigDialog
 from ui.drawings.fib_config import default_fib_settings, load_fib_settings, save_fib_settings
@@ -1167,33 +1168,6 @@ class ChartWidget(QWidget):
         self.btn_detach.setText("Dock" if detached else "Pop")
 
 
-class FloatingChartWindow(QWidget):
-    sig_window_closed = pyqtSignal(object)
-
-    def __init__(self, chart_widget, parent=None):
-        super().__init__(parent)
-        self.chart_widget = chart_widget
-        self.setWindowTitle(f"Chart - {chart_widget.current_period}")
-        self.resize(800, 600)
-        
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        self.setLayout(layout)
-        
-        layout.addWidget(self.chart_widget)
-        self.chart_widget.show()
-        
-        # 鏇存柊鏍囬
-        self.chart_widget.sig_period_changed.connect(self.update_title)
-
-    def update_title(self, period_display):
-        self.setWindowTitle(f"Chart - {period_display}")
-
-    def closeEvent(self, event):
-        self.sig_window_closed.emit(self.chart_widget)
-        event.accept()
-
-
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -2010,6 +1984,3 @@ class MainWindow(QWidget):
         self._set_date_edit(self.current_time)
         self.date_edit.blockSignals(False)
         self.refresh_all_charts()
-
-
-

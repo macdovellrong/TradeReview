@@ -13,6 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication
 
+from ui.chart_window import FloatingChartWindow
 from ui.main_window import MainWindow
 
 
@@ -46,6 +47,8 @@ class MainWindowCrosshairSyncTests(unittest.TestCase):
 
         window.detach_chart(target_chart, refresh_layout=False)
         self.assertTrue(target_chart.is_detached)
+        self.assertIsInstance(window.floating_windows[0], FloatingChartWindow)
+        self.assertEqual(window.floating_windows[0].__class__.__module__, "ui.chart_window")
 
         with patch.object(target_chart, "sync_crosshair") as sync_crosshair:
             source_chart.sig_mouse_moved_with_price.emit(123.0, 456.0)
