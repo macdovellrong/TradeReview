@@ -28,6 +28,7 @@ class UIModuleBoundaryTests(unittest.TestCase):
         self.assertIs(CompatMockYScale, MockYScale)
         self.assertIs(CompatChartWidget, ChartWidget)
         self.assertIs(CompatFloatingChartWindow, FloatingChartWindow)
+        self.assertEqual(ChartWidget.__module__, "ui.chart_widget")
         self.assertEqual(FloatingChartWindow.__module__, "ui.chart_window")
 
 

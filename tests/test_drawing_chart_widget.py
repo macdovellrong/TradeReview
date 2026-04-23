@@ -15,7 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from ui.drawings.fib_config import FibLevelsConfig, FibSettings
-from ui.main_window import ChartWidget
+from ui.chart_widget import ChartWidget
 
 
 APP = QApplication.instance() or QApplication([])
