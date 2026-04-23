@@ -11,6 +11,7 @@ from engine.data_engine import DataEngine
 from engine.replay_engine import ReplayEngine
 # Compatibility exports for legacy imports.
 from ui.main_controls import MainControls
+from ui.controllers.replay_controller import ReplayController
 from ui.chart_primitives import CandlestickItem, MockYScale, TimeAxisItem
 from ui.chart_widget import ChartWidget
 from ui.chart_window import FloatingChartWindow
@@ -30,6 +31,7 @@ class MainWindow(QWidget):
         
         self.engine = DataEngine(parquet_file=None) 
         self.replay_engine = ReplayEngine(self.engine)
+        self.replay_controller = ReplayController(self.replay_engine)
         self.settings = QSettings("TradeReview", "TradeReview")
         self.fib_settings = load_fib_settings(self.settings)
         self.current_time = datetime.datetime.now()
@@ -139,7 +141,7 @@ class MainWindow(QWidget):
 
         if self.chk_replay.isChecked():
             self._ensure_replay_engine()
-            self.replay_engine.reset(self.current_time)
+            self.replay_controller.reset(self.current_time)
 
         self.refresh_all_charts(auto_scale=False)
         self._center_charts_on_time(self.current_time)
@@ -206,7 +208,7 @@ class MainWindow(QWidget):
         if self.engine.df_ticks is None:
             return
         if not self.replay_engine.states:
-            self.replay_engine.initialize(
+            self.replay_controller.initialize(
                 self._get_replay_periods(),
                 self.current_time,
                 max_count_map=self._get_replay_max_count_map(),
@@ -334,7 +336,7 @@ class MainWindow(QWidget):
         # 鏇存柊鍐呴儴鏃堕棿
         self.current_time = self._normalize_time(target_dt)
         if self.replay_engine is not None:
-            self.replay_engine.initialize(
+            self.replay_controller.initialize(
                 self._get_replay_periods(),
                 self.current_time,
                 max_count_map=self._get_replay_max_count_map(),
@@ -385,7 +387,7 @@ class MainWindow(QWidget):
 
     def on_chart_period_changed(self, chart, period_display):
         if self.chk_replay.isChecked() and self.engine.df_ticks is not None:
-            self.replay_engine.initialize(
+            self.replay_controller.initialize(
                 self._get_replay_periods(),
                 self.current_time,
                 max_count_map=self._get_replay_max_count_map(),
@@ -511,7 +513,7 @@ class MainWindow(QWidget):
                 self.attach_chart(chart)
 
         if self.chk_replay.isChecked() and self.engine.df_ticks is not None:
-            self.replay_engine.initialize(
+            self.replay_controller.initialize(
                 self._get_replay_periods(),
                 self.current_time,
                 max_count_map=self._get_replay_max_count_map(),
@@ -653,7 +655,7 @@ class MainWindow(QWidget):
             self._set_date_edit(self.current_time)
         self.reset_charts_view()
         if hasattr(self, 'replay_engine'):
-            self.replay_engine.initialize(
+            self.replay_controller.initialize(
                 self._get_replay_periods(),
                 self.current_time,
                 max_count_map=self._get_replay_max_count_map(),
@@ -703,7 +705,7 @@ class MainWindow(QWidget):
         self._set_date_edit(self.current_time)
         self.date_edit.blockSignals(False)
         if self.chk_replay.isChecked():
-            self.replay_engine.reset(self.current_time)
+            self.replay_controller.reset(self.current_time)
         self.refresh_all_charts(auto_scale=True)
 
     def on_step_back(self):
@@ -718,17 +720,21 @@ class MainWindow(QWidget):
 
     def on_mode_change(self, state):
         is_replay = self.chk_replay.isChecked()
+        self.replay_controller.set_enabled(is_replay)
+        self.is_playing = self.replay_controller.is_playing
         self.btn_play.setEnabled(is_replay)
+        self.btn_play.setText("Pause" if self.is_playing else "Play")
         if is_replay:
             self._ensure_replay_engine()
         self.refresh_all_charts(auto_scale=True)
 
     def toggle_play(self):
-        self.is_playing = not self.is_playing
+        self.is_playing = self.replay_controller.toggle_playing()
         self.btn_play.setText("Pause" if self.is_playing else "Play")
 
     def set_speed(self, speed):
         self.replay_speed = speed
+        self.replay_controller.set_speed(speed)
 
     def reset_charts_view(self):
         self.refresh_all_charts(auto_scale=True)
@@ -741,7 +747,7 @@ class MainWindow(QWidget):
         if self.chk_replay.isChecked():
             self._ensure_replay_engine()
             view_count = self._get_view_count_for_period(chart.current_period)
-            df = self.replay_engine.get_view(chart.current_period, count=view_count, with_indicators=True)
+            df = self.replay_controller.get_view(chart.current_period, count=view_count, with_indicators=True)
             if df is not None:
                 target_idx = len(df) - 1
         else:
@@ -769,10 +775,10 @@ class MainWindow(QWidget):
         target_time = current_ts + pd.Timedelta(seconds=self.replay_speed)
 
         self._ensure_replay_engine()
-        actual_time = self.replay_engine.advance_to(target_time)
+        actual_time = self.replay_controller.advance_to(target_time)
         if actual_time is None:
             return
-        self.current_time = actual_time
+        self.current_time = self.replay_controller.current_time
 
         if self.engine.df_ticks is not None:
             idx = min(self.replay_engine.tick_pos, len(self.engine.df_ticks) - 1)
