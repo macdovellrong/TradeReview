@@ -253,6 +253,8 @@ class ChartWidget(QWidget):
 
         # EMA鏄剧ず鍒嗙粍锛堝彲澶氶€夛級
         self.ema_toggle_buttons = {}
+        self.btn_toggle_bb = None
+        self.btn_toggle_macd_rsi = None
         for span in [20, 30, 40, 50, 60, 100, 240]:
             name = f"EMA{span}"
             btn = QPushButton(name)
@@ -274,7 +276,7 @@ class ChartWidget(QWidget):
                     background-color: #333;
                 }
             """)
-            btn.toggled.connect(self.on_ema_toggle_changed)
+            btn.toggled.connect(self.on_indicator_toggle_changed)
             self.toolbar_layout.addWidget(btn)
             self.ema_toggle_buttons[name] = btn
         # 淇濇寔鏃ц涓猴細榛樿鏄剧ずEMA20-60
@@ -283,6 +285,52 @@ class ChartWidget(QWidget):
             btn.blockSignals(True)
             btn.setChecked(True)
             btn.blockSignals(False)
+
+        self.btn_toggle_bb = QPushButton("BB")
+        self.btn_toggle_bb.setCheckable(True)
+        self.btn_toggle_bb.setChecked(True)
+        self.btn_toggle_bb.setFixedSize(44, 30)
+        self.btn_toggle_bb.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #444;
+                background-color: #222;
+                color: #AAA;
+                border-radius: 2px;
+            }
+            QPushButton:checked {
+                background-color: #007ACC;
+                color: white;
+                border: 1px solid #007ACC;
+            }
+            QPushButton:hover {
+                background-color: #333;
+            }
+        """)
+        self.btn_toggle_bb.toggled.connect(self.on_indicator_toggle_changed)
+        self.toolbar_layout.addWidget(self.btn_toggle_bb)
+
+        self.btn_toggle_macd_rsi = QPushButton("MACD/RSI")
+        self.btn_toggle_macd_rsi.setCheckable(True)
+        self.btn_toggle_macd_rsi.setChecked(True)
+        self.btn_toggle_macd_rsi.setFixedSize(86, 30)
+        self.btn_toggle_macd_rsi.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #444;
+                background-color: #222;
+                color: #AAA;
+                border-radius: 2px;
+            }
+            QPushButton:checked {
+                background-color: #007ACC;
+                color: white;
+                border: 1px solid #007ACC;
+            }
+            QPushButton:hover {
+                background-color: #333;
+            }
+        """)
+        self.btn_toggle_macd_rsi.toggled.connect(self.on_indicator_panel_toggle_changed)
+        self.toolbar_layout.addWidget(self.btn_toggle_macd_rsi)
 
         # 缁樺浘宸ュ叿鎸夐挳
         self.btn_draw_select = QPushButton("Sel")
@@ -462,6 +510,7 @@ class ChartWidget(QWidget):
         self.ax_rsi.getAxis('right').setWidth(60)
         self.ax_rsi.setXLink(self.ax)
         self.ax_rsi.setMaximumHeight(120)
+        self._apply_indicator_panel_visibility()
 
         # 鍗佸瓧鍏夋爣 (Crosshair)
         self.vLine = pg.InfiniteLine(angle=90, movable=False)
@@ -675,7 +724,7 @@ class ChartWidget(QWidget):
         # Bollinger Bands
         bb_color = '#FFFFFF'
         for name in ['BB_Upper', 'BB_Lower']:
-            if name in df.columns:
+            if self._is_bollinger_enabled() and name in df.columns:
                 y_data = df[name].to_numpy(dtype=np.float64)
 
                 if name not in self.indicator_items:
@@ -690,6 +739,9 @@ class ChartWidget(QWidget):
                     self.indicator_items[name] = curve
                 else:
                     self.indicator_items[name].setData(x=x_data, y=y_data)
+                    self.indicator_items[name].setVisible(True)
+            elif name in self.indicator_items:
+                self.indicator_items[name].setVisible(False)
 
         # MACD
         if 'MACD' in df.columns and 'MACD_Signal' in df.columns:
@@ -1133,13 +1185,29 @@ class ChartWidget(QWidget):
             return True
         return btn.isChecked()
 
-    def on_ema_toggle_changed(self, _checked):
+    def _is_bollinger_enabled(self):
+        return self.btn_toggle_bb is None or self.btn_toggle_bb.isChecked()
+
+    def _are_indicator_panels_enabled(self):
+        return self.btn_toggle_macd_rsi is None or self.btn_toggle_macd_rsi.isChecked()
+
+    def _apply_indicator_panel_visibility(self):
+        if not hasattr(self, "ax_macd") or not hasattr(self, "ax_rsi"):
+            return
+        visible = self._are_indicator_panels_enabled()
+        self.ax_macd.setVisible(visible)
+        self.ax_rsi.setVisible(visible)
+
+    def on_indicator_toggle_changed(self, _checked):
         if not hasattr(self, "full_df") or self.full_df is None or self.full_df.empty:
             return
         # 寮哄埗閲嶆柊鍒囩墖鍒锋柊锛岀珛鍗冲簲鐢‥MA鏄鹃殣
         self._last_slice_start = -1
         self._last_slice_end = -1
         self.refresh_visible_view(force=True)
+
+    def on_indicator_panel_toggle_changed(self, _checked):
+        self._apply_indicator_panel_visibility()
 
     def update_chart(self, df, auto_scale=False, highlight_idx=None):
         if df is None or df.empty:

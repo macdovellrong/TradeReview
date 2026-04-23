@@ -22,6 +22,52 @@ APP = QApplication.instance() or QApplication([])
 
 
 class ChartWidgetDrawingTests(unittest.TestCase):
+    def test_macd_rsi_button_toggles_indicator_panels(self):
+        chart = ChartWidget("1min")
+
+        self.assertTrue(chart.ax_macd.isVisible())
+        self.assertTrue(chart.ax_rsi.isVisible())
+
+        chart.btn_toggle_macd_rsi.click()
+
+        self.assertFalse(chart.ax_macd.isVisible())
+        self.assertFalse(chart.ax_rsi.isVisible())
+
+        chart.btn_toggle_macd_rsi.click()
+
+        self.assertTrue(chart.ax_macd.isVisible())
+        self.assertTrue(chart.ax_rsi.isVisible())
+
+    def test_bollinger_button_toggles_band_visibility(self):
+        chart = ChartWidget("1min")
+        index = pd.to_datetime(
+            ["2026-04-16 09:30:00", "2026-04-16 09:31:00", "2026-04-16 09:32:00"]
+        )
+        df = pd.DataFrame(
+            {
+                "open": [100.0, 101.0, 102.0],
+                "close": [101.0, 102.0, 103.0],
+                "high": [102.0, 103.0, 104.0],
+                "low": [99.0, 100.0, 101.0],
+                "volume": [1.0, 1.0, 1.0],
+                "BB_Upper": [103.0, 104.0, 105.0],
+                "BB_Lower": [97.0, 98.0, 99.0],
+            },
+            index=index,
+        )
+
+        chart.update_chart(df)
+
+        self.assertIn("BB_Upper", chart.indicator_items)
+        self.assertIn("BB_Lower", chart.indicator_items)
+        self.assertTrue(chart.indicator_items["BB_Upper"].isVisible())
+        self.assertTrue(chart.indicator_items["BB_Lower"].isVisible())
+
+        chart.btn_toggle_bb.click()
+
+        self.assertFalse(chart.indicator_items["BB_Upper"].isVisible())
+        self.assertFalse(chart.indicator_items["BB_Lower"].isVisible())
+
     def test_set_draw_mode_uses_fib_extension_snapshot(self):
         chart = ChartWidget("1min")
         chart.set_fib_settings(
