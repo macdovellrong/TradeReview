@@ -4,12 +4,13 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QButtonGroup, QMessageBox)
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QSplitter, QFileDialog,
+                             QGridLayout, QTabWidget, QMessageBox)
 from PyQt6.QtCore import Qt, QTimer, QDateTime, QSettings
 from engine.data_engine import DataEngine
 from engine.replay_engine import ReplayEngine
 # Compatibility exports for legacy imports.
+from ui.main_controls import MainControls
 from ui.chart_primitives import CandlestickItem, MockYScale, TimeAxisItem
 from ui.chart_widget import ChartWidget
 from ui.chart_window import FloatingChartWindow
@@ -435,92 +436,37 @@ class MainWindow(QWidget):
             chart.set_fib_settings(self.fib_settings)
 
     def create_control_panel(self):
-        panel = QHBoxLayout()
-        
-        btn_load = QPushButton("Load Data")
-        btn_load.clicked.connect(self.open_file_dialog)
-        panel.addWidget(btn_load)
-        
-        btn_reset = QPushButton("Reset View")
-        btn_reset.clicked.connect(self.reset_charts_view)
-        panel.addWidget(btn_reset)
+        self.controls = MainControls(
+            current_time=self.current_time,
+            replay_speed=self.replay_speed,
+            parent=self,
+        )
+        self.controls.load_requested.connect(self.open_file_dialog)
+        self.controls.reset_requested.connect(self.reset_charts_view)
+        self.controls.save_view_requested.connect(self.on_save_view)
+        self.controls.layout_changed.connect(self.switch_layout)
+        self.controls.pop_layout_requested.connect(self.detach_layout_charts)
+        self.controls.chart_count_changed.connect(self.on_chart_count_changed)
+        self.controls.replay_mode_changed.connect(self.on_mode_change)
+        self.controls.play_requested.connect(self.toggle_play)
+        self.controls.step_back_requested.connect(self.on_step_back)
+        self.controls.step_forward_requested.connect(self.on_step_forward)
+        self.controls.speed_changed.connect(self.set_speed)
+        self.controls.date_edit_finished.connect(self.on_date_edit_finished)
 
-        btn_save_view = QPushButton("Save View")
-        btn_save_view.clicked.connect(self.on_save_view)
-        panel.addWidget(btn_save_view)
-        
-        panel.addWidget(QLabel("Layout:"))
-        self.combo_layout = QComboBox()
-        self.combo_layout.addItems(["Tabs", "Dual Vertical", "Grid 2x2", "Vertical"]) # Tabs first
-        self.combo_layout.currentTextChanged.connect(self.switch_layout)
-        panel.addWidget(self.combo_layout)
-        self.btn_detach_layout = QPushButton("Pop Layout")
-        self.btn_detach_layout.clicked.connect(self.detach_layout_charts)
-        panel.addWidget(self.btn_detach_layout)
-        panel.addWidget(QLabel("Charts:"))
-        self.combo_chart_count = QComboBox()
-        self.combo_chart_count.addItems(["1", "2", "3", "4"])
-        self.combo_chart_count.setCurrentText("4")
-        self.combo_chart_count.currentTextChanged.connect(self.on_chart_count_changed)
-        panel.addWidget(self.combo_chart_count)
+        self.combo_layout = self.controls.combo_layout
+        self.btn_detach_layout = self.controls.btn_detach_layout
+        self.combo_chart_count = self.controls.combo_chart_count
+        self.chk_replay = self.controls.chk_replay
+        self.btn_play = self.controls.btn_play
+        self.btn_step_back = self.controls.btn_step_back
+        self.btn_step_forward = self.controls.btn_step_forward
+        self.combo_step = self.controls.combo_step
+        self.speed_btn_group = self.controls.speed_btn_group
+        self.date_edit = self.controls.date_edit
 
+        self.main_layout.addWidget(self.controls)
 
-
-        self.chk_replay = QCheckBox("Replay Mode")
-        self.chk_replay.setChecked(False)
-        self.chk_replay.stateChanged.connect(self.on_mode_change)
-        panel.addWidget(self.chk_replay)
-
-        self.btn_play = QPushButton("Play")
-        self.btn_play.clicked.connect(self.toggle_play)
-        self.btn_play.setEnabled(False)
-        panel.addWidget(self.btn_play)
-
-        self.btn_step_back = QPushButton("Back")
-        self.btn_step_back.clicked.connect(self.on_step_back)
-        panel.addWidget(self.btn_step_back)
-
-        self.btn_step_forward = QPushButton("Forward")
-        self.btn_step_forward.clicked.connect(self.on_step_forward)
-        panel.addWidget(self.btn_step_forward)
-
-        self.combo_step = QComboBox()
-        self.combo_step.addItems(["30s", "1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D"])
-        self.combo_step.setCurrentText("1h")
-        panel.addWidget(self.combo_step)
-        
-        panel.addWidget(QLabel("Speed:"))
-        
-        self.speed_btn_group = QButtonGroup()
-        self.speed_btn_group.setExclusive(True)
-        
-        # 瀹氫箟甯哥敤鍊嶉€?
-        speeds = [1, 10, 60, 120, 300, 600]
-        
-        for s in speeds:
-            btn = QPushButton(f"{s}x")
-            btn.setCheckable(True)
-            btn.setFixedSize(40, 25)
-            
-            # 榛樿閫変腑 60x
-            if s == 60:
-                btn.setChecked(True)
-                self.replay_speed = s
-            
-            btn.clicked.connect(lambda checked, val=s: self.set_speed(val))
-            self.speed_btn_group.addButton(btn)
-            panel.addWidget(btn)
-
-        self.date_edit = QDateTimeEdit()
-        self.date_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
-        self.date_edit.setCalendarPopup(True)
-        self.date_edit.setKeyboardTracking(False)
-        self.date_edit.editingFinished.connect(self.on_date_edit_finished)
-        self._set_date_edit(self.current_time)
-        panel.addWidget(self.date_edit)
-        
-        panel.addStretch()
-        self.main_layout.addLayout(panel)
 
     def toggle_chart_detach(self, chart):
         if chart.is_detached:
