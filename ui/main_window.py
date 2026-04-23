@@ -19,6 +19,7 @@ from ui.crosshair_sync import CrosshairSyncController
 from ui.drawings.dialogs import FibConfigDialog
 from ui.drawings.fib_config import load_fib_settings, save_fib_settings
 from ui.drawings.specs import normalize_drawing_spec
+from ui.services.data_loading import DataLoadingFacade
 from ui.session_state import SessionState, load_session_state, save_session_state
 from ui.time_navigation import clamp_timestamp, normalize_jump_timestamp, resolve_chart_target
 
@@ -32,6 +33,7 @@ class MainWindow(QWidget):
         self.engine = DataEngine(parquet_file=None) 
         self.replay_engine = ReplayEngine(self.engine)
         self.replay_controller = ReplayController(self.replay_engine)
+        self.data_loading = DataLoadingFacade(self.engine)
         self.settings = QSettings("TradeReview", "TradeReview")
         self.fib_settings = load_fib_settings(self.settings)
         self.current_time = datetime.datetime.now()
@@ -634,21 +636,16 @@ class MainWindow(QWidget):
 
         # Layout switching only reflows the containers.
     def load_data_file(self, file_path, restore_time=None):
-        self.engine.parquet_file = file_path
-        self.engine.load_data()
-        if self.engine.df_ticks is None:
+        result = self.data_loading.load(file_path)
+        if not result.success:
             QMessageBox.critical(
                 self,
                 "Load Data Failed",
-                self.engine.last_load_error or "Failed to load the selected data file.",
+                result.error,
             )
             return
 
-        total_ticks = len(self.engine.df_ticks)
-        if total_ticks > 100000:
-            self.current_time = self.engine.df_ticks.index[100000]
-        else:
-            self.current_time = self.engine.df_ticks.index[0]
+        self.current_time = result.initial_time
 
         if hasattr(self, 'date_edit'):
             self._update_date_edit_bounds()
@@ -662,11 +659,11 @@ class MainWindow(QWidget):
             )
         if restore_time is not None:
             self.jump_to_time(restore_time)
-        if getattr(self.engine, "last_load_warnings", None):
+        if result.warnings:
             QMessageBox.warning(
                 self,
                 "Data Load Warning",
-                "\n\n".join(self.engine.last_load_warnings),
+                "\n\n".join(result.warnings),
             )
 
     def open_file_dialog(self):
