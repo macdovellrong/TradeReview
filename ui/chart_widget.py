@@ -1,41 +1,26 @@
 import datetime
-import os
-from functools import partial
 
-import finplot as fplt
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize
-from PyQt6.QtGui import QAction
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
-    QFileDialog,
     QButtonGroup,
-    QCheckBox,
-    QComboBox,
-    QDateTimeEdit,
-    QGridLayout,
     QHBoxLayout,
-    QLabel,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QSplitter,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from ui.chart_primitives import CandlestickItem, MockYScale, TimeAxisItem
 from ui.chart_performance import build_visible_slice_window, should_refresh_visible_slice
-from ui.drawings.dialogs import FibConfigDialog
-from ui.drawings.fib_config import default_fib_settings, load_fib_settings, save_fib_settings
+from ui.drawings.fib_config import default_fib_settings
 from ui.drawings.renderers import render_spec_items
 from ui.drawings.specs import normalize_drawing_spec
 from ui.drawings.tools import DrawingSession, TOOL_DEFINITIONS
-from ui.time_navigation import clamp_timestamp, normalize_jump_timestamp, resolve_chart_target
 
 class ChartWidget(QWidget):
     # 瀹氫箟淇″彿锛氶紶鏍囩Щ鍔ㄦ椂鍙戝皠褰撳墠鐨勬椂闂存埑 (float)

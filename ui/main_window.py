@@ -2,29 +2,21 @@ import datetime
 import os
 from functools import partial
 
-import finplot as fplt
 import numpy as np
 import pandas as pd
-import pyqtgraph as pg
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QScrollArea, QButtonGroup, QApplication, QSizePolicy, QMessageBox)
-from PyQt6.QtGui import QAction
-from PyQt6.QtCore import Qt, QTimer, QDateTime, QSettings, pyqtSignal, QSize
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+                             QComboBox, QLabel, QDateTimeEdit, QSplitter, QCheckBox, QFileDialog, QGridLayout, QTabWidget, QButtonGroup, QMessageBox)
+from PyQt6.QtCore import Qt, QTimer, QDateTime, QSettings
 from engine.data_engine import DataEngine
 from engine.replay_engine import ReplayEngine
+# Compatibility exports for legacy imports.
 from ui.chart_primitives import CandlestickItem, MockYScale, TimeAxisItem
 from ui.chart_widget import ChartWidget
-from ui.chart_performance import (
-    build_visible_slice_window,
-    should_refresh_visible_slice,
-)
 from ui.chart_window import FloatingChartWindow
 from ui.crosshair_sync import CrosshairSyncController
 from ui.drawings.dialogs import FibConfigDialog
-from ui.drawings.fib_config import default_fib_settings, load_fib_settings, save_fib_settings
-from ui.drawings.renderers import render_spec_items
+from ui.drawings.fib_config import load_fib_settings, save_fib_settings
 from ui.drawings.specs import normalize_drawing_spec
-from ui.drawings.tools import DrawingSession, TOOL_DEFINITIONS
 from ui.session_state import SessionState, load_session_state, save_session_state
 from ui.time_navigation import clamp_timestamp, normalize_jump_timestamp, resolve_chart_target
 
