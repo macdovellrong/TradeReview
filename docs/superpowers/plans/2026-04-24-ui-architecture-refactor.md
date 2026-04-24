@@ -101,6 +101,8 @@ Do not commit this test while it fails. It will be committed together with the f
 
 **Files:**
 - Create: `ui/chart_primitives.py`
+- Create: `ui/chart_widget.py` (temporary compatibility shim if missing)
+- Create: `ui/chart_window.py` (temporary compatibility shim if missing)
 - Modify: `ui/main_window.py`
 - Test: `tests/test_ui_module_boundaries.py`
 
@@ -134,6 +136,24 @@ from ui.chart_primitives import CandlestickItem, MockYScale, TimeAxisItem
 
 Remove the original `MockYScale`, `TimeAxisItem`, and `CandlestickItem` class definitions from `ui/main_window.py`.
 
+- [ ] **Step 2.5: Add temporary compatibility shims if required by the boundary test**
+
+If `ui/chart_widget.py` and `ui/chart_window.py` do not exist yet, create the smallest possible re-export shims so `tests/test_ui_module_boundaries.py` can pass before Task 3 and Task 4 move the real implementations:
+
+`ui/chart_widget.py`
+
+```python
+from ui.main_window import ChartWidget
+```
+
+`ui/chart_window.py`
+
+```python
+from ui.main_window import FloatingChartWindow
+```
+
+Do not move any implementation into these two files during Task 2. They are temporary import targets only.
+
 - [ ] **Step 3: Run focused tests**
 
 Run:
@@ -148,7 +168,7 @@ Expected: PASS for chart primitive imports and existing `ChartWidget` behavior.
 - [ ] **Step 4: Commit primitive extraction**
 
 ```powershell
-git add tests/test_ui_module_boundaries.py ui/chart_primitives.py ui/main_window.py
+git add tests/test_ui_module_boundaries.py ui/chart_primitives.py ui/chart_widget.py ui/chart_window.py ui/main_window.py docs/superpowers/plans/2026-04-24-ui-architecture-refactor.md
 git commit -m "refactor: 拆分图表底层绘制组件"
 ```
 
