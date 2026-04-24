@@ -8,6 +8,7 @@ __pycache__/
 .vscode/
 .worktrees/
 data/
+HANDOFF.md
 
 # local data files (keep only on local machine)
 *.duckdb
