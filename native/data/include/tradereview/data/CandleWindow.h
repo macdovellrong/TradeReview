@@ -28,7 +28,11 @@ struct CandleWindow {
 
     [[nodiscard]] size_t row_count() const;
     [[nodiscard]] bool empty() const;
+    [[nodiscard]] bool has_consistent_ohlcv() const;
+    [[nodiscard]] bool has_consistent_indicators() const;
     [[nodiscard]] bool has_consistent_columns() const;
+    [[nodiscard]] bool has_loaded_range() const;
+    [[nodiscard]] bool has_visible_range() const;
 };
 
 } // namespace tradereview::data

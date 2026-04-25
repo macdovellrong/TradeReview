@@ -72,14 +72,14 @@
 - Create: `native/tests/data/test_data_contracts.cpp`
 - Modify: `native/tests/CMakeLists.txt`
 
-- [ ] Add `DataError` with a stable `DataErrorCode` enum and message/path/table fields.
-- [ ] Add canonical indicator names for `EMA20`, `EMA30`, `EMA40`, `EMA50`, `EMA60`, `EMA100`, `EMA240`, `BB_Upper`, `BB_Lower`, `MACD`, `MACD_Signal`, `MACD_Hist`, `RSI`.
-- [ ] Extend `DataSetInfo` with dataset path, tick count, tick time range, available periods, available indicators, schema version, indicator version, and metadata-only flag.
-- [ ] Extend `CandleWindow` with helpers for required OHLCV consistency, indicator consistency, and loaded/visible range presence.
-- [ ] Extend `CandleWindowRequest` with requested indicator names and right-padding/warmup fields needed by chart and replay tasks.
-- [ ] Add native tests for metadata-only source state, indicator consistency, inconsistent columns, and request defaults.
-- [ ] Static verification: `rg -n "DataError|IndicatorColumns|metadata_only|requested_indicators|has_consistent" native`.
-- [ ] Commit with message: `强化C++数据契约`.
+- [x] Add `DataError` with a stable `DataErrorCode` enum and message/path/table fields.
+- [x] Add canonical indicator names for `EMA20`, `EMA30`, `EMA40`, `EMA50`, `EMA60`, `EMA100`, `EMA240`, `BB_Upper`, `BB_Lower`, `MACD`, `MACD_Signal`, `MACD_Hist`, `RSI`.
+- [x] Extend `DataSetInfo` with dataset path, tick count, tick time range, available periods, available indicators, schema version, indicator version, and metadata-only flag.
+- [x] Extend `CandleWindow` with helpers for required OHLCV consistency, indicator consistency, and loaded/visible range presence.
+- [x] Extend `CandleWindowRequest` with requested indicator names and right-padding/warmup fields needed by chart and replay tasks.
+- [x] Add native tests for metadata-only source state, indicator consistency, inconsistent columns, and request defaults.
+- [x] Static verification: `rg -n "DataError|IndicatorColumns|metadata_only|requested_indicators|has_consistent" native`.
+- [x] Commit with message: `强化C++数据契约`.
 
 ### Task 2: DuckDB Repository Boundary
 
@@ -380,3 +380,13 @@
 - Current execution constraint: do not proactively compile or run the C++ native app.
 - Next task: Task 1, data contract hardening.
 
+### 2026-04-26 Task 1 Completed
+
+- Hardened native data contracts with `DataError`, canonical indicator column names, metadata-only dataset state, candle window consistency helpers, and extended candle window request fields.
+- Added native data contract tests in `native/tests/data/test_data_contracts.cpp`.
+- User explicitly allowed a temporary MSVC build for this task. Verified with `C:\Build\TradeReview-native-task1-msvc`:
+  - configure: `cmake -S native -B C:\Build\TradeReview-native-task1-msvc ...` exited 0;
+  - build: `cmake --build C:\Build\TradeReview-native-task1-msvc --target tradereview_native_tests --config Debug` exited 0;
+  - test: `ctest --test-dir C:\Build\TradeReview-native-task1-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- No native exe was launched.
+- Next task: Task 2, DuckDB repository boundary.

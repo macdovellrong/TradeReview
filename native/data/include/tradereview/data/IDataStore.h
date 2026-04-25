@@ -19,7 +19,9 @@ struct CandleWindowRequest {
     int pixel_width = 0;
     double buffer_multiplier = 2.0;
     bool include_indicators = true;
+    std::vector<std::string> requested_indicators;
     int warmup_bars = 0;
+    int right_padding_bars = 0;
 };
 
 struct TickSlice {
