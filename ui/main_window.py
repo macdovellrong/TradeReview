@@ -14,6 +14,7 @@ from ui.main_controls import MainControls
 from ui.controllers.replay_controller import ReplayController
 from ui.chart_primitives import CandlestickItem, MockYScale, TimeAxisItem
 from ui.chart_widget import ChartWidget
+from ui.chart_windowing import build_query_window
 from ui.chart_window import FloatingChartWindow
 from ui.crosshair_sync import CrosshairSyncController
 from ui.drawings.dialogs import FibConfigDialog
@@ -303,6 +304,7 @@ class MainWindow(QWidget):
             
             # 鐩戝惉鍛ㄦ湡鏀瑰彉锛岃Е鍙戦噸缁?+ 鏇存柊 Tab 鏍囬
             chart.sig_period_changed.connect(lambda p, c=chart: self.on_chart_period_changed(c, p))
+            chart.sig_window_reload_requested.connect(partial(self.reload_chart_window, chart))
             
             # 鐩戝惉鍒嗙璇锋眰
             chart.sig_detach_requested.connect(self.toggle_chart_detach)
@@ -736,6 +738,21 @@ class MainWindow(QWidget):
 
     def reset_charts_view(self):
         self.refresh_all_charts(auto_scale=True)
+
+    def reload_chart_window(self, chart, view_start, view_end):
+        if self.chk_replay.isChecked():
+            return
+        if not getattr(self.engine, "_duckdb_path", None):
+            return
+        if not hasattr(self.engine, "get_candles_window"):
+            return
+
+        query_start, query_end = build_query_window(view_start, view_end)
+        df = self.engine.get_candles_window(chart.current_period, query_start, query_end)
+        if df is None or df.empty:
+            return
+
+        chart.update_chart_window(df, auto_scale=False)
 
     def refresh_single_chart(self, chart, auto_scale=False):
         has_duckdb_source = bool(getattr(self.engine, "_duckdb_path", None))

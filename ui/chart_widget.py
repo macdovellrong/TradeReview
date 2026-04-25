@@ -41,6 +41,7 @@ class ChartWidget(QWidget):
     sig_sync_y_center_requested = pyqtSignal(float)
     # 淇″彿锛氳缃洖鏀惧紑濮嬫椂闂?(datetime)
     sig_set_replay_start = pyqtSignal(object)
+    sig_window_reload_requested = pyqtSignal(object, object)
 
     def __init__(self, name="Chart", parent=None):
         super().__init__(parent)
@@ -480,6 +481,9 @@ class ChartWidget(QWidget):
         self._last_slice_start = -1
         self._last_slice_end = -1
         self._slice_padding = 1000
+        self.loaded_start_time = None
+        self.loaded_end_time = None
+        self.window_generation = 0
 
     def on_range_changed(self):
         # 鍙湁褰撶敤鎴锋嫋鍔ㄦ椂鎵嶈Е鍙戯紙Replay 涔熶細瑙﹀彂锛屼絾鎴戜滑闇€瑕佸畠瑙﹀彂锛?
@@ -488,6 +492,15 @@ class ChartWidget(QWidget):
             return
 
         min_x, max_x = self.ax.vb.viewRange()[0]
+        if self.loaded_start_time is not None and self.loaded_end_time is not None:
+            view_start = self.get_datetime_from_x(min_x)
+            view_end = self.get_datetime_from_x(max_x)
+            if view_end < view_start:
+                view_start, view_end = view_end, view_start
+            if view_start < self.loaded_start_time or view_end > self.loaded_end_time:
+                self.sig_window_reload_requested.emit(view_start, view_end)
+                return
+
         if not should_refresh_visible_slice(
             view_min=min_x,
             view_max=max_x,
@@ -1099,6 +1112,9 @@ class ChartWidget(QWidget):
         self.time_axis.set_datetime_index(df.index)
         self._last_slice_start = -1
         self._last_slice_end = -1
+        self.loaded_start_time = df.index[0]
+        self.loaded_end_time = df.index[-1]
+        self.window_generation += 1
 
         self.update_plot_items(df, offset_x=0)
 
@@ -1140,6 +1156,8 @@ class ChartWidget(QWidget):
             df.index = df.index.tz_localize(None)
         
         self.full_df = df
+        self.loaded_start_time = None
+        self.loaded_end_time = None
         self.current_df = df # 鍏煎鏃ч€昏緫
         
         # 鏁版嵁婧愬彉鏇达紝閲嶇疆鍒囩墖缂撳瓨锛岀‘淇?refresh_visible_view 鑳借Е鍙戞洿鏂?

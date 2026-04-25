@@ -124,6 +124,32 @@ class ChartWidgetDrawingTests(unittest.TestCase):
         self.assertEqual(len(chart.current_x), 3)
         self.assertEqual(chart.get_visible_time_range(), (index[0], index[1]))
 
+    def test_window_mode_requests_reload_when_view_moves_past_loaded_data(self):
+        chart = ChartWidget("1min")
+        index = pd.to_datetime(
+            ["2026-04-16 09:30:00", "2026-04-16 09:31:00", "2026-04-16 09:32:00"]
+        )
+        df = pd.DataFrame(
+            {
+                "open": [100.0, 101.0, 102.0],
+                "close": [101.0, 102.0, 103.0],
+                "high": [102.0, 103.0, 104.0],
+                "low": [99.0, 100.0, 101.0],
+                "volume": [1.0, 1.0, 1.0],
+            },
+            index=index,
+        )
+        received = []
+        chart.sig_window_reload_requested.connect(lambda start, end: received.append((start, end)))
+
+        chart.update_chart_window(df)
+        chart.ax.setXRange(10, 12, padding=0)
+        received.clear()
+        chart.on_range_changed()
+
+        self.assertEqual(len(received), 1)
+        self.assertGreater(received[0][0], index[-1])
+
 
 if __name__ == "__main__":
     unittest.main()
