@@ -1,5 +1,7 @@
 #include "tradereview/app/MainWindow.h"
 
+#include "tradereview/chart/ChartViewWidget.h"
+
 #include <QMenuBar>
 #include <QStatusBar>
 
@@ -12,7 +14,8 @@ MainWindow::MainWindow(QWidget* parent)
     resize(1400, 950);
 
     menuBar()->addMenu("&File");
-    statusBar()->showMessage("Native workspace ready");
+    setCentralWidget(new chart::ChartViewWidget(this));
+    statusBar()->showMessage("Native OpenGL chart ready");
 }
 
 } // namespace tradereview::app
