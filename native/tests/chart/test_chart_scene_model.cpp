@@ -30,7 +30,9 @@ tradereview::data::CandleWindow sample_window(std::uint64_t generation)
 void test_scene_model_accepts_matching_generation()
 {
     tradereview::chart::ChartSceneModel model;
-    model.bump_generation();
+    tradereview::core::assert_equal(model.bump_generation(), std::uint64_t{1}, "first generation bump returns 1");
+    tradereview::core::assert_equal(model.bump_generation(), std::uint64_t{2}, "second generation bump returns 2");
+    tradereview::core::assert_equal(model.generation(), std::uint64_t{2}, "generation after two bumps");
 
     auto window = sample_window(model.generation());
 

@@ -9,9 +9,9 @@ std::uint64_t ChartSceneModel::generation() const
     return generation_;
 }
 
-void ChartSceneModel::bump_generation()
+std::uint64_t ChartSceneModel::bump_generation()
 {
-    ++generation_;
+    return ++generation_;
 }
 
 bool ChartSceneModel::apply_window(data::CandleWindow window)

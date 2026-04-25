@@ -11,9 +11,9 @@ namespace tradereview::chart {
 class ChartSceneModel {
 public:
     [[nodiscard]] std::uint64_t generation() const;
-    void bump_generation();
+    std::uint64_t bump_generation();
 
-    bool apply_window(data::CandleWindow window);
+    [[nodiscard]] bool apply_window(data::CandleWindow window);
 
     [[nodiscard]] std::size_t row_count() const;
     [[nodiscard]] const data::CandleWindow& window() const;
