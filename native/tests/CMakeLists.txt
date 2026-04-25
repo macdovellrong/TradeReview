@@ -1,4 +1,6 @@
 add_executable(tradereview_native_tests
+    chart/test_lod_resolver.cpp
+    chart/test_windowing.cpp
     core/test_assertions.cpp
     core/test_period.cpp
     core/test_time_range.cpp

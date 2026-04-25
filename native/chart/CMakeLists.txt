@@ -1,13 +1,16 @@
-add_library(tradereview_chart INTERFACE)
+add_library(tradereview_chart STATIC
+    src/LodResolver.cpp
+    src/Windowing.cpp
+)
 
 target_include_directories(tradereview_chart
-    INTERFACE
+    PUBLIC
         include
         rendering/include
 )
 
 target_link_libraries(tradereview_chart
-    INTERFACE
+    PUBLIC
         tradereview_core
         tradereview_data
 )
