@@ -456,6 +456,7 @@ class ChartWidget(QWidget):
         self.glw.setBackground('k')
         
         self.current_period = "1min"
+        self.active_display_period = self.current_period
         self.plot_item = None 
         self.indicator_items = {}
         self.macd_items = {}
@@ -1048,6 +1049,7 @@ class ChartWidget(QWidget):
 
     def set_period(self, period):
         self.current_period = period
+        self.active_display_period = period
         # 鏇存柊鎸夐挳鐘舵€?
         display = self.display_map.get(period, period)
         for btn in self.btn_group.buttons():
@@ -1096,6 +1098,38 @@ class ChartWidget(QWidget):
         if end_idx < start_idx:
             start_idx, end_idx = end_idx, start_idx
         return self.current_df.index[start_idx], self.current_df.index[end_idx]
+
+    def _normalize_current_index_timestamp(self, value):
+        ts = pd.Timestamp(value)
+        index = self.current_df.index
+        if index.tz is None and ts.tzinfo is not None:
+            try:
+                return ts.tz_convert("America/New_York").tz_localize(None)
+            except TypeError:
+                return ts.tz_localize(None)
+        if index.tz is not None and ts.tzinfo is None:
+            return ts.tz_localize(index.tz)
+        return ts
+
+    def set_time_view_range(self, view_start, view_end):
+        if self.current_df is None or self.current_df.empty:
+            return
+
+        start_ts = self._normalize_current_index_timestamp(view_start)
+        end_ts = self._normalize_current_index_timestamp(view_end)
+        if end_ts < start_ts:
+            start_ts, end_ts = end_ts, start_ts
+
+        index = self.current_df.index
+        last_idx = len(index) - 1
+        start_idx = int(index.searchsorted(start_ts, side="left"))
+        end_idx = int(index.searchsorted(end_ts, side="right")) - 1
+        start_idx = max(0, min(last_idx, start_idx))
+        end_idx = max(0, min(last_idx, end_idx))
+        if end_idx < start_idx:
+            start_idx, end_idx = end_idx, start_idx
+
+        self.ax.setXRange(start_idx, end_idx, padding=0)
 
     def update_chart_window(self, df, auto_scale=False, highlight_idx=None):
         if df is None or df.empty:
@@ -1156,6 +1190,7 @@ class ChartWidget(QWidget):
             df.index = df.index.tz_localize(None)
         
         self.full_df = df
+        self.active_display_period = self.current_period
         self.loaded_start_time = None
         self.loaded_end_time = None
         self.current_df = df # 鍏煎鏃ч€昏緫

@@ -13,6 +13,7 @@ from engine.replay_engine import ReplayEngine
 from ui.main_controls import MainControls
 from ui.controllers.replay_controller import ReplayController
 from ui.chart_primitives import CandlestickItem, MockYScale, TimeAxisItem
+from ui.chart_lod import choose_lod_period
 from ui.chart_widget import ChartWidget
 from ui.chart_windowing import build_query_window
 from ui.chart_window import FloatingChartWindow
@@ -739,6 +740,14 @@ class MainWindow(QWidget):
     def reset_charts_view(self):
         self.refresh_all_charts(auto_scale=True)
 
+    def _resolve_display_period(self, chart, view_start, view_end):
+        return choose_lod_period(
+            requested_period=chart.current_period,
+            view_start=view_start,
+            view_end=view_end,
+            pixel_width=max(chart.width(), 800),
+        )
+
     def reload_chart_window(self, chart, view_start, view_end):
         if self.chk_replay.isChecked():
             return
@@ -747,12 +756,15 @@ class MainWindow(QWidget):
         if not hasattr(self.engine, "get_candles_window"):
             return
 
+        actual_period = self._resolve_display_period(chart, view_start, view_end)
         query_start, query_end = build_query_window(view_start, view_end)
-        df = self.engine.get_candles_window(chart.current_period, query_start, query_end)
+        df = self.engine.get_candles_window(actual_period, query_start, query_end)
         if df is None or df.empty:
             return
 
+        chart.active_display_period = actual_period
         chart.update_chart_window(df, auto_scale=False)
+        chart.set_time_view_range(view_start, view_end)
 
     def refresh_single_chart(self, chart, auto_scale=False):
         has_duckdb_source = bool(getattr(self.engine, "_duckdb_path", None))
@@ -772,12 +784,14 @@ class MainWindow(QWidget):
                 view_count = self._get_view_count_for_period(chart.current_period)
                 window_start = target_time - pd.Timedelta(minutes=max(view_count, 300))
                 window_end = target_time + pd.Timedelta(minutes=max(view_count // 4, 100))
-                df = self.engine.get_candles_window(chart.current_period, window_start, window_end)
+                actual_period = self._resolve_display_period(chart, window_start, window_end)
+                df = self.engine.get_candles_window(actual_period, window_start, window_end)
                 if df is not None and not df.empty:
                     search_time = target_time
                     if df.index.tz is None and search_time.tzinfo is not None:
                         search_time = search_time.replace(tzinfo=None)
                     target_idx = df.index.searchsorted(search_time)
+                    chart.active_display_period = actual_period
                     chart.update_chart_window(df, auto_scale=auto_scale, highlight_idx=target_idx)
                     return
 
@@ -791,6 +805,7 @@ class MainWindow(QWidget):
                 
                 target_idx = df.index.searchsorted(search_time)
                 
+        chart.active_display_period = chart.current_period
         chart.update_chart(df, auto_scale=auto_scale, highlight_idx=target_idx)
 
     def refresh_all_charts(self, auto_scale=False):

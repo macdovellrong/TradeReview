@@ -150,6 +150,27 @@ class ChartWidgetDrawingTests(unittest.TestCase):
         self.assertEqual(len(received), 1)
         self.assertGreater(received[0][0], index[-1])
 
+    def test_set_time_view_range_maps_dates_to_loaded_window_indices(self):
+        chart = ChartWidget("1D")
+        index = pd.date_range("2026-04-01", periods=10, freq="1D")
+        df = pd.DataFrame(
+            {
+                "open": range(10),
+                "close": range(10),
+                "high": range(1, 11),
+                "low": range(10),
+                "volume": [1.0] * 10,
+            },
+            index=index,
+        )
+
+        chart.update_chart_window(df)
+        chart.set_time_view_range(index[2], index[5])
+
+        x_min, x_max = chart.ax.vb.viewRange()[0]
+        self.assertAlmostEqual(x_min, 2.0)
+        self.assertAlmostEqual(x_max, 5.0)
+
 
 if __name__ == "__main__":
     unittest.main()

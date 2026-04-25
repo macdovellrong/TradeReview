@@ -36,6 +36,16 @@ class ChartLODTests(unittest.TestCase):
 
         self.assertEqual(period, "1D")
 
+    def test_lod_never_chooses_finer_period_than_requested(self):
+        period = choose_lod_period(
+            requested_period="1h",
+            view_start=pd.Timestamp("2026-01-01"),
+            view_end=pd.Timestamp("2026-01-10"),
+            pixel_width=1600,
+        )
+
+        self.assertEqual(period, "1h")
+
 
 if __name__ == "__main__":
     unittest.main()

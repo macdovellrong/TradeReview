@@ -151,6 +151,47 @@ class MainWindowTimeNavigationTests(unittest.TestCase):
         self.assertEqual(engine.calls[0][2], pd.Timestamp("2026-04-16 13:00:00"))
         update_chart_window.assert_called_once_with(df, auto_scale=False)
 
+    def test_reload_chart_window_uses_lod_period_for_wide_view(self):
+        window = self.create_window()
+        chart = window.charts[0]
+        chart.set_period("1min")
+        index = pd.date_range("2021-01-01", periods=10, freq="1D")
+        df = pd.DataFrame(
+            {
+                "open": [100.0] * 10,
+                "close": [101.0] * 10,
+                "high": [102.0] * 10,
+                "low": [99.0] * 10,
+                "volume": [1.0] * 10,
+            },
+            index=index,
+        )
+
+        class FakeDuckDBEngine:
+            _duckdb_path = "sample.duckdb"
+
+            def __init__(self, frame):
+                self.frame = frame
+                self.calls = []
+
+            def get_candles_window(self, period, start_time, end_time):
+                self.calls.append((period, start_time, end_time))
+                return self.frame
+
+        engine = FakeDuckDBEngine(df)
+        window.engine = engine
+
+        with patch.object(chart, "update_chart_window") as update_chart_window:
+            window.reload_chart_window(
+                chart,
+                pd.Timestamp("2021-01-01"),
+                pd.Timestamp("2026-01-01"),
+            )
+
+        self.assertEqual(engine.calls[0][0], "1D")
+        self.assertEqual(chart.active_display_period, "1D")
+        update_chart_window.assert_called_once_with(df, auto_scale=False)
+
 
 if __name__ == "__main__":
     unittest.main()
