@@ -55,13 +55,22 @@ std::string choose_lod_period(
     const std::vector<std::string>& available_periods,
     double max_bars_per_pixel)
 {
-    const auto requested_seconds = core::period_seconds(requested_period);
+    const auto parsed_available_periods = parse_available_periods(available_periods);
+    const auto maybe_requested_seconds = core::try_period_seconds(requested_period);
+    if (!maybe_requested_seconds.has_value()) {
+        if (!parsed_available_periods.empty()) {
+            return parsed_available_periods.front().period;
+        }
+        return requested_period;
+    }
+
+    const auto requested_seconds = *maybe_requested_seconds;
     if (fits_density(visible_range, requested_seconds, pixel_width, max_bars_per_pixel)) {
         return requested_period;
     }
 
     std::optional<AvailablePeriod> coarsest_not_finer;
-    for (const auto& available : parse_available_periods(available_periods)) {
+    for (const auto& available : parsed_available_periods) {
         if (available.seconds < requested_seconds) {
             continue;
         }

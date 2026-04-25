@@ -55,6 +55,18 @@ void test_lod_never_chooses_finer_period_than_requested()
     tradereview::core::assert_equal(chosen, std::string{"1h"}, "not-finer lod period");
 }
 
+void test_lod_invalid_requested_uses_finest_available_period()
+{
+    const std::vector<std::string> periods{"1min", "1h"};
+    const auto chosen = tradereview::chart::choose_lod_period(
+        "invalid requested",
+        seconds_range(60 * 60),
+        1600,
+        periods);
+
+    tradereview::core::assert_equal(chosen, std::string{"1min"}, "invalid requested lod period");
+}
+
 struct RegisterLodResolverTests {
     RegisterLodResolverTests()
     {
@@ -67,6 +79,9 @@ struct RegisterLodResolverTests {
         tradereview::tests::register_test(
             "lod never chooses finer period than requested",
             test_lod_never_chooses_finer_period_than_requested);
+        tradereview::tests::register_test(
+            "lod invalid requested uses finest available period",
+            test_lod_invalid_requested_uses_finest_available_period);
     }
 };
 
