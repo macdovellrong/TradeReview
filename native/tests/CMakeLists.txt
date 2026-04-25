@@ -1,5 +1,7 @@
 add_executable(tradereview_native_tests
     core/test_assertions.cpp
+    core/test_period.cpp
+    core/test_time_range.cpp
     test_main.cpp
 )
 
