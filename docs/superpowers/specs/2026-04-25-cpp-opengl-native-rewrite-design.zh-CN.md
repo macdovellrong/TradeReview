@@ -46,6 +46,8 @@
 - Qt 文档说明 Qt Widgets 可通过 `QOpenGLWidget` 集成 OpenGL，Qt Quick 默认硬件加速并可选择 OpenGL 后端。参考：https://doc.qt.io/qt-6/qtopengl-index.html
 - Qt 文档说明 `QOpenGLWidget` 是 Widgets 中嵌入 OpenGL 的稳定跨平台方案，同时提示其 FBO、composition 和多窗口限制。参考：https://doc.qt.io/qt-6/qopenglwidget.html
 - Qt 文档说明 `QSGRenderNode` 可在 Qt Quick scene graph 中插入 QRhi 或 native 3D API 渲染命令。参考：https://doc.qt.io/qt-6/qsgrendernode.html
+- Blend2D 官方资料说明它是 C++ 高性能 2D 矢量图形引擎，核心能力包括分析式光栅化、JIT 生成 2D pipeline、SIMD 和多线程渲染。参考：https://blend2d.com/about.html
+- MetaTrader 5 Build 5430 发布说明记录其图表图形核心从 GDI 替换为 Blend2D，用于改进图表、指标、HiDPI、透明度和跨系统一致性。参考：https://www.metatrader5.com/zh/releasenotes/terminal/2418
 - DuckDB 文档说明 C++ API 是内部 API，不保证稳定，应用级集成建议优先考虑 C API。参考：https://duckdb.org/docs/current/clients/cpp.html
 - DuckDB 文档说明 Parquet 是压缩列式格式，并支持高效读取、filter/projection pushdown。参考：https://duckdb.org/docs/current/data/parquet/overview.html
 - DuckDB 文档说明有 zonemap，时间有序数据能改善压缩和查询跳过效果。参考：https://duckdb.org/docs/current/guides/performance/indexing.html
@@ -851,7 +853,19 @@ ReplaySession
 
 保留：Gemini 建议 `Qt Quick + QSGRenderNode/QRhi`，适合现代 UI 和未来多图形后端。如果后续决定重做品牌级现代 UI，可以重新评估。
 
-### 18.2 DuckDB C API vs C++ API
+### 18.2 OpenGL vs Blend2D
+
+推荐首版：继续使用 `OpenGL` 作为主图数据渲染后端。
+
+原因：
+
+- K 线、成交量、指标线在可见窗口内属于大量重复几何，OpenGL 批量 buffer 绘制更直接。
+- 当前 M0/M1 计划已经围绕 `QOpenGLWidget`、`GLChartRenderer` 和视口窗口模型展开，能够先验证数据边界、坐标映射和窗口刷新语义。
+- Blend2D 是高性能 CPU 2D 软件渲染引擎，不等同于 GPU 视口方案。它更适合作为 GDI/GDI+ 替代、复杂 2D 矢量图形、文字、半透明标注、画线工具和静态图层后端。
+
+保留：后续在 `IRenderer` 或 chart rendering 边界稳定后，可以新增 `Blend2DChartRenderer` 实验后端，或采用混合路线：OpenGL 绘制主图高频数据，Blend2D/Qt 绘制文字、标注、复杂画线和离屏缓存层。首版不引入 Blend2D 依赖，避免同时承担 OpenGL 与 Blend2D 两套渲染集成成本。
+
+### 18.3 DuckDB C API vs C++ API
 
 推荐：首选封装 C API，或把 C++ API 使用严格限制在 `DuckDbRepository` 内。
 
@@ -860,7 +874,7 @@ ReplaySession
 - DuckDB 官方说明 C++ API 是内部 API，不保证稳定。
 - C API 更适合长期应用边界。
 
-### 18.3 内部时间基准
+### 18.4 内部时间基准
 
 推荐首版：`int64 timestamp_ns`，语义与现有 DuckDB candles 的 NY wall-time 对齐。
 
@@ -869,7 +883,7 @@ ReplaySession
 - 长期更严谨的做法是 UTC ns + session calendar。
 - 但当前 Python 版和已生成 DuckDB 数据使用 NY wall-time 语义，首版应优先保证行为一致。
 
-### 18.4 自定义二进制缓存是否首版实现
+### 18.5 自定义二进制缓存是否首版实现
 
 推荐：首版不实现，只设计接口和 metadata。
 
@@ -878,7 +892,7 @@ ReplaySession
 - DuckDB ordered timestamp + zonemap + LRU cache 足够验证多数场景。
 - 过早引入 mmap cache 会增加 schema 演进和一致性风险。
 
-### 18.5 GPU 是否做 LOD
+### 18.6 GPU 是否做 LOD
 
 推荐：LOD 主要在数据层/CPU 侧选择周期，GPU 负责批量渲染当前窗口。
 
