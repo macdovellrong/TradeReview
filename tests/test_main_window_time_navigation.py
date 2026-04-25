@@ -65,6 +65,48 @@ class MainWindowTimeNavigationTests(unittest.TestCase):
 
         self.assertEqual(window.current_time, index[-1])
 
+    def test_refresh_single_chart_uses_window_query_for_duckdb_metadata_mode(self):
+        window = self.create_window()
+        chart = window.charts[0]
+        index = pd.to_datetime(
+            ["2026-04-16 09:30:00", "2026-04-16 09:31:00", "2026-04-16 09:32:00"]
+        )
+        df = pd.DataFrame(
+            {
+                "open": [100.0, 101.0, 102.0],
+                "close": [101.0, 102.0, 103.0],
+                "high": [102.0, 103.0, 104.0],
+                "low": [99.0, 100.0, 101.0],
+                "volume": [1.0, 1.0, 1.0],
+            },
+            index=index,
+        )
+
+        class FakeDuckDBEngine:
+            df_ticks = None
+            _duckdb_path = "sample.duckdb"
+
+            def __init__(self, frame):
+                self.frame = frame
+                self.calls = []
+
+            def get_candles_window(self, period, start_time, end_time):
+                self.calls.append((period, start_time, end_time))
+                return self.frame
+
+        engine = FakeDuckDBEngine(df)
+        window.engine = engine
+        window.current_time = pd.Timestamp("2026-04-16 09:31:00", tz="UTC")
+        window.chk_replay.setChecked(False)
+
+        with patch.object(chart, "update_chart_window", create=True) as update_chart_window:
+            window.refresh_single_chart(chart, auto_scale=True)
+
+        self.assertEqual(len(engine.calls), 1)
+        self.assertEqual(engine.calls[0][0], chart.current_period)
+        update_chart_window.assert_called_once()
+        self.assertEqual(update_chart_window.call_args.kwargs["highlight_idx"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

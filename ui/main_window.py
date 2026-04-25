@@ -207,7 +207,8 @@ class MainWindow(QWidget):
         return [chart.current_period for chart in self._get_enabled_charts()]
 
     def _ensure_replay_engine(self):
-        if self.engine.df_ticks is None:
+        has_duckdb_source = bool(getattr(self.engine, "_duckdb_path", None))
+        if self.engine.df_ticks is None and not has_duckdb_source:
             return
         if not self.replay_engine.states:
             self.replay_controller.initialize(
@@ -737,7 +738,8 @@ class MainWindow(QWidget):
         self.refresh_all_charts(auto_scale=True)
 
     def refresh_single_chart(self, chart, auto_scale=False):
-        if self.engine.df_ticks is None:
+        has_duckdb_source = bool(getattr(self.engine, "_duckdb_path", None))
+        if self.engine.df_ticks is None and not has_duckdb_source:
             return
         
         target_idx = None
@@ -748,6 +750,20 @@ class MainWindow(QWidget):
             if df is not None:
                 target_idx = len(df) - 1
         else:
+            if has_duckdb_source and hasattr(self.engine, "get_candles_window"):
+                target_time = self._normalize_time(self.current_time)
+                view_count = self._get_view_count_for_period(chart.current_period)
+                window_start = target_time - pd.Timedelta(minutes=max(view_count, 300))
+                window_end = target_time + pd.Timedelta(minutes=max(view_count // 4, 100))
+                df = self.engine.get_candles_window(chart.current_period, window_start, window_end)
+                if df is not None and not df.empty:
+                    search_time = target_time
+                    if df.index.tz is None and search_time.tzinfo is not None:
+                        search_time = search_time.replace(tzinfo=None)
+                    target_idx = df.index.searchsorted(search_time)
+                    chart.update_chart_window(df, auto_scale=auto_scale, highlight_idx=target_idx)
+                    return
+
             df = self.engine.get_candles(chart.current_period) 
             # 鍏ㄩ噺妯″紡涓嬶紝鏍规嵁褰撳墠鏃堕棿鎵惧埌瀵瑰簲鐨?index
             if df is not None and not df.empty:

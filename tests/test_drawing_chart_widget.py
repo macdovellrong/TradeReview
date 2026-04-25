@@ -101,6 +101,29 @@ class ChartWidgetDrawingTests(unittest.TestCase):
         self.assertIn(10, chart.drawings)
         self.assertEqual(len(chart.drawings[10]), 6)
 
+    def test_update_chart_window_sets_local_window_data(self):
+        chart = ChartWidget("1min")
+        index = pd.to_datetime(
+            ["2026-04-16 09:30:00", "2026-04-16 09:31:00", "2026-04-16 09:32:00"]
+        )
+        df = pd.DataFrame(
+            {
+                "open": [100.0, 101.0, 102.0],
+                "close": [101.0, 102.0, 103.0],
+                "high": [102.0, 103.0, 104.0],
+                "low": [99.0, 100.0, 101.0],
+                "volume": [1.0, 1.0, 1.0],
+            },
+            index=index,
+        )
+
+        chart.update_chart_window(df, auto_scale=True, highlight_idx=1)
+        chart.ax.setXRange(0, 1, padding=0)
+
+        self.assertEqual(list(chart.current_df.index), list(index))
+        self.assertEqual(len(chart.current_x), 3)
+        self.assertEqual(chart.get_visible_time_range(), (index[0], index[1]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1074,6 +1074,47 @@ class ChartWidget(QWidget):
     def on_indicator_panel_toggle_changed(self, _checked):
         self._apply_indicator_panel_visibility()
 
+    def get_visible_time_range(self):
+        if self.current_df is None or self.current_df.empty:
+            return None
+        min_x, max_x = self.ax.vb.viewRange()[0]
+        start_idx = max(0, min(len(self.current_df) - 1, int(min_x)))
+        end_idx = max(0, min(len(self.current_df) - 1, int(max_x)))
+        if end_idx < start_idx:
+            start_idx, end_idx = end_idx, start_idx
+        return self.current_df.index[start_idx], self.current_df.index[end_idx]
+
+    def update_chart_window(self, df, auto_scale=False, highlight_idx=None):
+        if df is None or df.empty:
+            return
+
+        if df.index.tz is not None:
+            df = df.copy()
+            df.index = df.index.tz_localize(None)
+
+        self.full_df = df
+        self.current_df = df
+        self.current_x = np.arange(len(df), dtype=np.float64)
+        self.current_time_values = np.asarray(df.index.view("int64"), dtype=np.float64)
+        self.time_axis.set_datetime_index(df.index)
+        self._last_slice_start = -1
+        self._last_slice_end = -1
+
+        self.update_plot_items(df, offset_x=0)
+
+        if auto_scale:
+            idx = highlight_idx if highlight_idx is not None else len(df) - 1
+            idx = max(0, min(len(df) - 1, int(idx)))
+            x_start = max(0, idx - 150)
+            x_end = min(len(df) - 1, idx + 20)
+            visible_slice = df.iloc[int(x_start):int(x_end) + 1]
+            if not visible_slice.empty:
+                y_min = visible_slice["low"].min()
+                y_max = visible_slice["high"].max()
+                y_pad = (y_max - y_min) * 0.1
+                self.ax.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
+            self.ax.setXRange(x_start, x_end, padding=0)
+
     def update_chart(self, df, auto_scale=False, highlight_idx=None):
         if df is None or df.empty:
             return
