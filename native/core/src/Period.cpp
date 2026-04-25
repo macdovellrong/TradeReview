@@ -29,7 +29,7 @@ std::optional<ParsedPeriod> parse_period(std::string_view period)
         ++index;
     }
 
-    if (index == 0 || index == period.size()) {
+    if (index == 0 || index == period.size() || value == 0) {
         return std::nullopt;
     }
 
@@ -47,7 +47,7 @@ std::optional<std::int64_t> unit_seconds(std::string_view unit)
     if (unit == "h") {
         return 60 * 60;
     }
-    if (unit == "d") {
+    if (unit == "d" || unit == "D") {
         return 24 * 60 * 60;
     }
     if (unit == "w") {
@@ -70,7 +70,7 @@ std::optional<std::string_view> table_unit(std::string_view unit)
     if (unit == "h") {
         return std::string_view{"h"};
     }
-    if (unit == "d") {
+    if (unit == "d" || unit == "D") {
         return std::string_view{"d"};
     }
     if (unit == "w") {
