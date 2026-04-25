@@ -95,13 +95,13 @@
 - Create: `native/tests/data/test_duckdb_schema.cpp`
 - Modify: `native/tests/CMakeLists.txt`
 
-- [ ] Add schema inspection types independent of the concrete DuckDB C API handle.
-- [ ] Implement table name mapping for existing period semantics including `1min`/`1m` and `1M`/month separation.
-- [ ] Implement pure schema validation helpers for `ticks`, candle OHLCV columns, optional indicator columns, and gap-row allowance.
-- [ ] Add a `DuckDbRepository` class with methods matching `IDataStore`, with C API calls isolated in this class.
-- [ ] Gate DuckDB linkage behind a CMake option if local headers/libs are not always present.
-- [ ] Static verification: `rg -n "DuckDbRepository|DuckDbSchema|validate_.*candle|candles_1mo|TRADEREVIEW_NATIVE_WITH_DUCKDB" native`.
-- [ ] Commit with message: `增加C++ DuckDB仓储边界`.
+- [x] Add schema inspection types independent of the concrete DuckDB C API handle.
+- [x] Implement table name mapping for existing period semantics including `1min`/`1m` and `1M`/month separation.
+- [x] Implement pure schema validation helpers for `ticks`, candle OHLCV columns, optional indicator columns, and gap-row allowance.
+- [x] Add a `DuckDbRepository` class with methods matching `IDataStore`, with C API calls isolated in this class.
+- [x] Gate DuckDB linkage behind a CMake option if local headers/libs are not always present.
+- [x] Static verification: `rg -n "DuckDbRepository|DuckDbSchema|validate_.*candle|candles_1mo|TRADEREVIEW_NATIVE_WITH_DUCKDB" native`.
+- [x] Commit with message: `增加C++ DuckDB仓储边界`.
 
 ### Task 3: Single Chart Data Loading Path
 
@@ -391,3 +391,15 @@
   - test: `ctest --test-dir C:\Build\TradeReview-native-task1-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
 - No native exe was launched.
 - Next task: Task 2, DuckDB repository boundary.
+
+### 2026-04-26 Task 2 Completed
+
+- Added `DuckDbSchema` pure schema helpers and tests for period-to-table mapping, timestamp/datetime/time aliases, ticks columns, candle OHLCV columns, requested indicator columns, and missing-column reporting.
+- Added `DuckDbRepository` behind `TRADEREVIEW_NATIVE_WITH_DUCKDB`, defaulting OFF so builds do not require DuckDB headers/libs yet.
+- Main-thread review caught and fixed a schema mismatch: external DuckDB tables validate `timestamp`/`datetime`/`time` aliases, not internal `timestamp_ns`.
+- Verified with `C:\Build\TradeReview-native-task2-msvc`:
+  - configure exited 0;
+  - `cmake --build C:\Build\TradeReview-native-task2-msvc --target tradereview_native_tests --config Debug` exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task2-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- No native exe was launched.
+- Next task: Task 3, single chart data loading path.

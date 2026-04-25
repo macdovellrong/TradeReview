@@ -8,6 +8,7 @@ add_executable(tradereview_native_tests
     core/test_time_range.cpp
     data/test_candle_window.cpp
     data/test_data_contracts.cpp
+    data/test_duckdb_schema.cpp
     test_main.cpp
 )
 
