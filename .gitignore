@@ -8,8 +8,6 @@ __pycache__/
 .vscode/
 .worktrees/
 /data/
-!native/data/
-!native/data/**
 HANDOFF.md
 
 # local data files (keep only on local machine)
