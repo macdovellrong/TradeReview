@@ -143,7 +143,7 @@ class ChartWidgetDrawingTests(unittest.TestCase):
         chart.sig_window_reload_requested.connect(lambda start, end: received.append((start, end)))
 
         chart.update_chart_window(df)
-        chart.ax.setXRange(10, 12, padding=0)
+        chart.ax.setXRange(30, 32, padding=0)
         received.clear()
         chart.on_range_changed()
 
@@ -170,6 +170,50 @@ class ChartWidgetDrawingTests(unittest.TestCase):
         x_min, x_max = chart.ax.vb.viewRange()[0]
         self.assertAlmostEqual(x_min, 2.0)
         self.assertAlmostEqual(x_max, 5.0)
+
+    def test_set_time_view_range_adds_right_padding_at_last_candle(self):
+        chart = ChartWidget("1D")
+        index = pd.date_range("2026-04-01", periods=10, freq="1D")
+        df = pd.DataFrame(
+            {
+                "open": range(10),
+                "close": range(10),
+                "high": range(1, 11),
+                "low": range(10),
+                "volume": [1.0] * 10,
+            },
+            index=index,
+        )
+
+        chart.update_chart_window(df)
+        chart.set_time_view_range(index[5], index[-1])
+
+        _x_min, x_max = chart.ax.vb.viewRange()[0]
+        self.assertGreater(x_max, len(index) - 1)
+
+    def test_auto_scale_last_candle_padding_does_not_request_reload(self):
+        chart = ChartWidget("1min")
+        index = pd.date_range("2026-04-16 09:30:00", periods=10, freq="1min")
+        df = pd.DataFrame(
+            {
+                "open": range(10),
+                "close": range(10),
+                "high": range(1, 11),
+                "low": range(10),
+                "volume": [1.0] * 10,
+            },
+            index=index,
+        )
+        received = []
+        chart.sig_window_reload_requested.connect(lambda start, end: received.append((start, end)))
+
+        chart.update_chart_window(df, auto_scale=True, highlight_idx=len(index) - 1)
+        received.clear()
+        chart.on_range_changed()
+
+        _x_min, x_max = chart.ax.vb.viewRange()[0]
+        self.assertGreater(x_max, len(index) - 1)
+        self.assertEqual(received, [])
 
 
 if __name__ == "__main__":

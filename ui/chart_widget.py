@@ -482,6 +482,7 @@ class ChartWidget(QWidget):
         self._last_slice_start = -1
         self._last_slice_end = -1
         self._slice_padding = 1000
+        self._right_edge_padding_bars = 20
         self.loaded_start_time = None
         self.loaded_end_time = None
         self.window_generation = 0
@@ -498,7 +499,8 @@ class ChartWidget(QWidget):
             view_end = self.get_datetime_from_x(max_x)
             if view_end < view_start:
                 view_start, view_end = view_end, view_start
-            if view_start < self.loaded_start_time or view_end > self.loaded_end_time:
+            loaded_end = self._loaded_end_time_with_visual_padding()
+            if view_start < self.loaded_start_time or view_end > loaded_end:
                 self.sig_window_reload_requested.emit(view_start, view_end)
                 return
 
@@ -1111,6 +1113,18 @@ class ChartWidget(QWidget):
             return ts.tz_localize(index.tz)
         return ts
 
+    def _right_edge_padding_delta(self):
+        delta = self.time_axis._delta if self.time_axis._delta else datetime.timedelta(minutes=1)
+        return delta * self._right_edge_padding_bars
+
+    def _loaded_end_time_with_visual_padding(self):
+        if self.loaded_end_time is None:
+            return None
+        return self.loaded_end_time + self._right_edge_padding_delta()
+
+    def _right_padded_x_end(self, x_end):
+        return x_end + self._right_edge_padding_bars
+
     def set_time_view_range(self, view_start, view_end):
         if self.current_df is None or self.current_df.empty:
             return
@@ -1129,6 +1143,8 @@ class ChartWidget(QWidget):
         if end_idx < start_idx:
             start_idx, end_idx = end_idx, start_idx
 
+        if end_ts >= index[-1]:
+            end_idx = self._right_padded_x_end(end_idx)
         self.ax.setXRange(start_idx, end_idx, padding=0)
 
     def update_chart_window(self, df, auto_scale=False, highlight_idx=None):
@@ -1156,7 +1172,7 @@ class ChartWidget(QWidget):
             idx = highlight_idx if highlight_idx is not None else len(df) - 1
             idx = max(0, min(len(df) - 1, int(idx)))
             x_start = max(0, idx - 150)
-            x_end = min(len(df) - 1, idx + 20)
+            x_end = idx + self._right_edge_padding_bars
             visible_slice = df.iloc[int(x_start):int(x_end) + 1]
             if not visible_slice.empty:
                 y_min = visible_slice["low"].min()
