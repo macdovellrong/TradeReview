@@ -19,6 +19,17 @@ class DataLoadingFacade:
         self.engine.load_data()
         df_ticks = self.engine.df_ticks
         if df_ticks is None or df_ticks.empty:
+            if (
+                getattr(self.engine, "_duckdb_path", None)
+                and getattr(self.engine, "tick_count", 0) > 0
+                and getattr(self.engine, "tick_start", None) is not None
+            ):
+                return DataLoadResult(
+                    success=True,
+                    file_path=file_path,
+                    initial_time=self.engine.tick_start,
+                    warnings=tuple(self.engine.last_load_warnings or ()),
+                )
             return DataLoadResult(
                 success=False,
                 file_path=file_path,

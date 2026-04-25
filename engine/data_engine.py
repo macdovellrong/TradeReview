@@ -19,6 +19,9 @@ class DataEngine:
         self._candles_cache = {}
         self._duckdb_path = None
         self._duckdb_candles_tables = set()
+        self.tick_start = None
+        self.tick_end = None
+        self.tick_count = 0
         self.last_load_error = None
         self.last_load_warnings = []
         self.load_data()
@@ -29,6 +32,9 @@ class DataEngine:
         self.last_load_error = None
         self.last_load_warnings = []
         self.df_ticks = None
+        self.tick_start = None
+        self.tick_end = None
+        self.tick_count = 0
         self._candles_cache.clear()
         try:
             if not self.parquet_file:
@@ -79,10 +85,25 @@ class DataEngine:
                             valid_candle_tables.add(table_name)
                         self._duckdb_candles_tables = valid_candle_tables
 
-                    df = con.execute("SELECT * FROM ticks ORDER BY timestamp").df()
+                    row = con.execute(
+                        """
+                        SELECT
+                            count(*) AS row_count,
+                            min(timestamp) AS min_ts,
+                            max(timestamp) AS max_ts
+                        FROM ticks
+                        """
+                    ).fetchone()
+                    self.tick_count = int(row[0] or 0)
+                    self.tick_start = pd.Timestamp(row[1]) if row[1] is not None else None
+                    self.tick_end = pd.Timestamp(row[2]) if row[2] is not None else None
                 finally:
                     con.close()
-                self.df_ticks = normalize_tick_dataframe(df, f"{self.parquet_file}::ticks")
+                print(
+                    f"Loaded DuckDB metadata. Ticks: {self.tick_count}. "
+                    f"Time range: {self.tick_start} - {self.tick_end}"
+                )
+                return
             else:
                 self._duckdb_path = None
                 self._duckdb_candles_tables = set()
@@ -98,12 +119,18 @@ class DataEngine:
                 self.df_ticks.index = self.df_ticks.index.tz_convert('America/New_York')
             
             self.df_ticks.sort_index(inplace=True)
+            self.tick_count = len(self.df_ticks)
+            self.tick_start = self.df_ticks.index[0]
+            self.tick_end = self.df_ticks.index[-1]
             
             print(f"Loaded {len(self.df_ticks)} ticks. Time range: {self.df_ticks.index[0]} - {self.df_ticks.index[-1]}")
             
         except Exception as e:
             self.last_load_error = str(e)
             self.df_ticks = None
+            self.tick_start = None
+            self.tick_end = None
+            self.tick_count = 0
             self._candles_cache.clear()
             print(f"Error loading data: {e}")
 
