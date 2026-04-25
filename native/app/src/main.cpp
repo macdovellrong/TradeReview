@@ -1,10 +1,6 @@
-#include <QApplication>
-#include <QLabel>
+#include "tradereview/app/NativeApp.h"
 
 int main(int argc, char* argv[])
 {
-    QApplication app(argc, argv);
-    QLabel label("TradeReview Native");
-    label.show();
-    return app.exec();
+    return tradereview::app::run_native_app(argc, argv);
 }

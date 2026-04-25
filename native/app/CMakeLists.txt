@@ -1,7 +1,16 @@
 find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
 
-add_executable(tradereview_native
+qt_add_executable(tradereview_native
+    include/tradereview/app/MainWindow.h
+    include/tradereview/app/NativeApp.h
+    src/MainWindow.cpp
+    src/NativeApp.cpp
     src/main.cpp
+)
+
+target_include_directories(tradereview_native
+    PRIVATE
+        include
 )
 
 target_link_libraries(tradereview_native
