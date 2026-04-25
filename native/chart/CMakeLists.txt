@@ -1,5 +1,7 @@
 add_library(tradereview_chart STATIC
     src/ChartViewWidget.cpp
+    src/ChartToolbarWidget.cpp
+    src/ChartWorkspaceWidget.cpp
     src/ChartSceneModel.cpp
     src/ChartIndexMapper.cpp
     src/LodResolver.cpp
@@ -7,7 +9,7 @@ add_library(tradereview_chart STATIC
     rendering/src/GLChartRenderer.cpp
 )
 
-find_package(Qt6 REQUIRED COMPONENTS OpenGL OpenGLWidgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
 
 target_include_directories(tradereview_chart
     PUBLIC
@@ -19,6 +21,7 @@ target_link_libraries(tradereview_chart
     PUBLIC
         tradereview_core
         tradereview_data
+        Qt6::Widgets
         Qt6::OpenGL
         Qt6::OpenGLWidgets
 )
