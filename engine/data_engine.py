@@ -178,8 +178,6 @@ class DataEngine:
         将 Tick 数据重采样为 OHLCV K线数据 (全量)
         支持纽约时间切分 (NY Close at 17:00)
         """
-        if self.df_ticks is None:
-            return None
         if timeframe in self._candles_cache:
             return self._candles_cache[timeframe]
 
@@ -194,7 +192,7 @@ class DataEngine:
                     df = normalize_candle_dataframe(
                         df,
                         f"{self._duckdb_path}::{table}",
-                        allow_gap_rows=table.endswith("s"),
+                        allow_gap_rows=self._table_allows_gap_rows(table),
                     )
                     if any(col not in df.columns for col in CURRENT_CANDLE_INDICATOR_COLUMNS):
                         df = self._calculate_indicators(df)
@@ -205,6 +203,9 @@ class DataEngine:
 
         # 规范化周期格式
         # Pandas 新版本推荐使用 'h' 而不是 'H'，这里不再强制大写
+
+        if self.df_ticks is None:
+            return None
 
         print(f"Resampling to {timeframe}...")
         
@@ -254,6 +255,59 @@ class DataEngine:
         
         self._candles_cache[timeframe] = df_candles
         return df_candles
+
+    def get_candles_window(self, timeframe, start_time, end_time):
+        if not self._duckdb_path:
+            df_full = self.get_candles(timeframe)
+            if df_full is None or df_full.empty:
+                return None
+            start_ts = pd.Timestamp(start_time)
+            end_ts = pd.Timestamp(end_time)
+            if df_full.index.tz is not None and start_ts.tzinfo is None:
+                start_ts = start_ts.tz_localize(df_full.index.tz)
+                end_ts = end_ts.tz_localize(df_full.index.tz)
+            elif df_full.index.tz is None and start_ts.tzinfo is not None:
+                start_ts = start_ts.tz_localize(None)
+                end_ts = end_ts.tz_localize(None)
+            return df_full.loc[start_ts:end_ts]
+
+        table = self._duckdb_table_for_timeframe(timeframe)
+        if table not in self._duckdb_candles_tables:
+            return None
+
+        import duckdb
+
+        start_ts = pd.Timestamp(start_time)
+        end_ts = pd.Timestamp(end_time)
+        if start_ts.tzinfo is not None:
+            start_ts = start_ts.tz_localize(None)
+        if end_ts.tzinfo is not None:
+            end_ts = end_ts.tz_localize(None)
+
+        con = duckdb.connect(self._duckdb_path, read_only=True)
+        try:
+            df = con.execute(
+                f"""
+                SELECT *
+                FROM {table}
+                WHERE timestamp >= ? AND timestamp <= ?
+                ORDER BY timestamp
+                """,
+                [start_ts.to_pydatetime(), end_ts.to_pydatetime()],
+            ).df()
+        finally:
+            con.close()
+
+        if df.empty:
+            empty = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+            empty.index = pd.DatetimeIndex([], name="timestamp")
+            return empty
+
+        return normalize_candle_dataframe(
+            df,
+            f"{self._duckdb_path}::{table}",
+            allow_gap_rows=self._table_allows_gap_rows(table),
+        )
 
     def get_candles_by_time(self, timeframe, end_time, count=200):
         """
