@@ -14,7 +14,8 @@
 
 - Work from `V:\gold\TradeReview\.worktrees\cpp-opengl-native-m0m1` unless explicitly redirected.
 - Keep commits small and use Chinese commit messages.
-- Do not proactively compile or run the C++ native app. The user will compile manually. Static verification is allowed.
+- For this full-port execution, the user explicitly permits Qt + MSVC configure/build/CTest validation in temporary directories under `C:\Build`, such as `C:\Build\TradeReview-native-taskN-msvc`.
+- Do not launch the native exe unless the user explicitly asks for it.
 - Ignore untracked build directories such as `native-build-*`, `native/build/`, and `native/.qtcreator/`.
 - Complete tasks in order unless a blocker requires splitting a task.
 - After every completed task:
