@@ -8,6 +8,8 @@ namespace tradereview::chart {
 
 class ChartIndexMapper {
 public:
+    // Stores timestamps in the caller-provided row order. Callers must provide
+    // the visible window sorted by timestamp ascending for timestamp searches.
     void set_timestamps(std::vector<std::int64_t> timestamps);
 
     bool empty() const;

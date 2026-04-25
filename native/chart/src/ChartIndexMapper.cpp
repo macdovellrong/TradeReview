@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -13,11 +14,30 @@ namespace {
 
 constexpr std::int64_t kDefaultStepNs = 60LL * 1'000'000'000LL;
 
+int round_half_left_to_int(double x)
+{
+    if (!std::isfinite(x)) {
+        throw std::invalid_argument("x must be finite");
+    }
+
+    const auto min_dense_x = static_cast<double>(std::numeric_limits<int>::min());
+    const auto max_dense_x = static_cast<double>(std::numeric_limits<int>::max());
+    if (x <= min_dense_x) {
+        return std::numeric_limits<int>::min();
+    }
+    if (x >= max_dense_x) {
+        return std::numeric_limits<int>::max();
+    }
+
+    const auto lower = std::floor(x);
+    const auto rounded = ((x - lower) == 0.5) ? lower : std::floor(x + 0.5);
+    return static_cast<int>(rounded);
+}
+
 } // namespace
 
 void ChartIndexMapper::set_timestamps(std::vector<std::int64_t> timestamps)
 {
-    std::sort(timestamps.begin(), timestamps.end());
     timestamps_ = std::move(timestamps);
 }
 
@@ -68,7 +88,7 @@ std::int64_t ChartIndexMapper::timestamp_from_x(double x) const
         throw std::runtime_error("cannot map x in empty ChartIndexMapper");
     }
 
-    const auto dense_x = static_cast<int>(std::llround(x));
+    const auto dense_x = round_half_left_to_int(x);
     if (dense_x >= 0 && static_cast<std::size_t>(dense_x) < timestamps_.size()) {
         return timestamps_[static_cast<std::size_t>(dense_x)];
     }
@@ -91,7 +111,14 @@ std::int64_t ChartIndexMapper::step_ns() const
     std::vector<std::int64_t> steps;
     steps.reserve(timestamps_.size() - 1);
     for (std::size_t index = 1; index < timestamps_.size(); ++index) {
-        steps.push_back(timestamps_[index] - timestamps_[index - 1]);
+        const auto step = timestamps_[index] - timestamps_[index - 1];
+        if (step > 0) {
+            steps.push_back(step);
+        }
+    }
+
+    if (steps.empty()) {
+        return kDefaultStepNs;
     }
 
     std::sort(steps.begin(), steps.end());
