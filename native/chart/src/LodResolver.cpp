@@ -65,7 +65,15 @@ std::string choose_lod_period(
     }
 
     const auto requested_seconds = *maybe_requested_seconds;
-    if (fits_density(visible_range, requested_seconds, pixel_width, max_bars_per_pixel)) {
+    if (parsed_available_periods.empty()) {
+        return requested_period;
+    }
+
+    const auto requested_is_available =
+        std::any_of(parsed_available_periods.begin(), parsed_available_periods.end(), [&](const AvailablePeriod& available) {
+            return available.period == requested_period;
+        });
+    if (requested_is_available && fits_density(visible_range, requested_seconds, pixel_width, max_bars_per_pixel)) {
         return requested_period;
     }
 
@@ -84,7 +92,7 @@ std::string choose_lod_period(
     if (coarsest_not_finer.has_value()) {
         return coarsest_not_finer->period;
     }
-    return requested_period;
+    return parsed_available_periods.back().period;
 }
 
 } // namespace tradereview::chart

@@ -50,7 +50,7 @@ std::optional<std::int64_t> unit_seconds(std::string_view unit)
     if (unit == "d" || unit == "D") {
         return 24 * 60 * 60;
     }
-    if (unit == "w") {
+    if (unit == "w" || unit == "W") {
         return 7 * 24 * 60 * 60;
     }
     if (unit == "M") {
@@ -70,11 +70,17 @@ std::optional<std::string_view> table_unit(std::string_view unit)
     if (unit == "h") {
         return std::string_view{"h"};
     }
-    if (unit == "d" || unit == "D") {
+    if (unit == "d") {
         return std::string_view{"d"};
+    }
+    if (unit == "D") {
+        return std::string_view{"D"};
     }
     if (unit == "w") {
         return std::string_view{"w"};
+    }
+    if (unit == "W") {
+        return std::string_view{"W"};
     }
     if (unit == "M") {
         return std::string_view{"mo"};

@@ -32,8 +32,20 @@ void test_period_accepts_uppercase_day_unit()
         "1D period seconds");
     tradereview::core::assert_equal(
         tradereview::core::duckdb_candle_table("1D"),
-        std::string{"candles_1d"},
+        std::string{"candles_1D"},
         "1D candle table");
+}
+
+void test_period_accepts_uppercase_week_unit()
+{
+    tradereview::core::assert_equal(
+        tradereview::core::period_seconds("1W"),
+        std::int64_t{604800},
+        "1W period seconds");
+    tradereview::core::assert_equal(
+        tradereview::core::duckdb_candle_table("1W"),
+        std::string{"candles_1W"},
+        "1W candle table");
 }
 
 void test_period_rejects_zero_value()
@@ -73,6 +85,9 @@ struct RegisterPeriodTests {
         tradereview::tests::register_test(
             "period accepts uppercase day unit",
             test_period_accepts_uppercase_day_unit);
+        tradereview::tests::register_test(
+            "period accepts uppercase week unit",
+            test_period_accepts_uppercase_week_unit);
         tradereview::tests::register_test(
             "period rejects zero value",
             test_period_rejects_zero_value);

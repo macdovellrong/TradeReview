@@ -31,6 +31,30 @@ void test_lod_keeps_requested_period_when_density_fits()
     tradereview::core::assert_equal(chosen, std::string{"1min"}, "density-fit lod period");
 }
 
+void test_lod_uses_available_not_finer_period_when_requested_is_missing_and_fits()
+{
+    const std::vector<std::string> periods{"1min", "5min"};
+    const auto chosen = tradereview::chart::choose_lod_period(
+        "2min",
+        seconds_range(30 * 60),
+        1600,
+        periods);
+
+    tradereview::core::assert_equal(chosen, std::string{"5min"}, "missing requested density-fit lod period");
+}
+
+void test_lod_keeps_requested_period_when_available_and_density_fits()
+{
+    const std::vector<std::string> periods{"1min", "2min", "5min"};
+    const auto chosen = tradereview::chart::choose_lod_period(
+        "2min",
+        seconds_range(30 * 60),
+        1600,
+        periods);
+
+    tradereview::core::assert_equal(chosen, std::string{"2min"}, "available requested density-fit lod period");
+}
+
 void test_lod_chooses_coarser_period_for_multi_year_view()
 {
     const std::vector<std::string> periods{"30s", "1min", "5min", "1h", "4h", "1D"};
@@ -73,6 +97,12 @@ struct RegisterLodResolverTests {
         tradereview::tests::register_test(
             "lod keeps requested period when density fits",
             test_lod_keeps_requested_period_when_density_fits);
+        tradereview::tests::register_test(
+            "lod uses available not finer period when requested is missing and fits",
+            test_lod_uses_available_not_finer_period_when_requested_is_missing_and_fits);
+        tradereview::tests::register_test(
+            "lod keeps requested period when available and density fits",
+            test_lod_keeps_requested_period_when_available_and_density_fits);
         tradereview::tests::register_test(
             "lod chooses coarser period for multi-year view",
             test_lod_chooses_coarser_period_for_multi_year_view);
