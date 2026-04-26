@@ -2,23 +2,30 @@
 
 #include "tradereview/chart/ChartViewWidget.h"
 #include "tradereview/chart/ChartWorkspaceWidget.h"
+#include "tradereview/core/Period.h"
 #include "tradereview/data/DuckDbRepository.h"
 #include "tradereview/data/IDataStore.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <QObject>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace tradereview::app {
 namespace {
 
 constexpr std::int64_t kNanosecondsPerHour = 60LL * 60LL * 1000LL * 1000LL * 1000LL;
+constexpr std::int64_t kNanosecondsPerSecond = 1000LL * 1000LL * 1000LL;
 constexpr std::int64_t kInitialWindowWidthNs = 6LL * kNanosecondsPerHour;
 constexpr int kDefaultPixelWidth = 1200;
+constexpr std::size_t kReplayMaxTicksPerFrame = 20000;
+constexpr std::size_t kReplayMaxBarsPerPeriod = 1200;
 
 std::string toPathString(const QString& path)
 {
@@ -82,6 +89,55 @@ std::string requestedPeriod(const data::DataSetInfo& dataset_info)
     return "1min";
 }
 
+std::vector<std::string> replayPeriods(const chart::ChartWorkspaceWidget& workspace, const std::string& fallback_period)
+{
+    std::vector<std::string> periods;
+    for (const auto chart_id : workspace.enabled_chart_ids()) {
+        auto period = workspace.requested_period(chart_id);
+        if (period.empty()) {
+            period = fallback_period;
+        }
+        if (std::find(periods.begin(), periods.end(), period) == periods.end()) {
+            periods.push_back(std::move(period));
+        }
+    }
+    if (periods.empty()) {
+        periods.push_back(fallback_period);
+    }
+    return periods;
+}
+
+core::TimeRange replayVisibleRange(
+    const replay::ReplaySession& session,
+    std::string_view period,
+    const data::DataSetInfo& dataset_info)
+{
+    auto period_ns = 60LL * kNanosecondsPerSecond;
+    if (const auto seconds = core::try_period_seconds(period); seconds.has_value()) {
+        period_ns = *seconds * kNanosecondsPerSecond;
+    }
+
+    const auto current = session.current_time_ns();
+    const auto start = std::max(dataset_info.tick_range.start_ns, current - (300LL * period_ns));
+    auto end = std::min(dataset_info.tick_range.end_ns, current + (20LL * period_ns));
+    if (end <= start) {
+        end = start + period_ns;
+    }
+    return {start, end};
+}
+
+std::int64_t replayStartTime(const chart::ChartWorkspaceWidget& workspace, const data::DataSetInfo& dataset_info)
+{
+    try {
+        const auto& window = workspace.chart_view(workspace.active_chart_id()).scene_model().window();
+        if (window.has_visible_range()) {
+            return std::clamp(window.visible_range.start_ns, dataset_info.tick_range.start_ns, dataset_info.tick_range.end_ns);
+        }
+    } catch (const std::exception&) {
+    }
+    return dataset_info.tick_range.start_ns;
+}
+
 data::CandleWindowRequest makeWindowRequest(
     chart::ChartWorkspaceWidget& workspace,
     std::uint64_t chart_id,
@@ -116,6 +172,7 @@ DataLoadController::DataLoadController(std::unique_ptr<data::IDataStore> store)
 DataLoadController::DataLoadController(std::shared_ptr<data::IDataStore> store)
     : store_(std::move(store))
     , scheduler_(std::make_unique<data::DataScheduler>(store_))
+    , replay_session_(std::make_unique<replay::ReplaySession>(store_))
 {
     if (!store_) {
         throw std::invalid_argument("DataLoadController requires an IDataStore");
@@ -142,6 +199,7 @@ data::ScheduleSubmitStatus DataLoadController::load_file_async(
     dataset_info_ = scheduler_->open_readonly(opened_path);
     dataset_path_ = datasetPathForRequest(opened_path, dataset_info_);
     requested_period_ = requestedPeriod(dataset_info_);
+    replay_session_->set_enabled(false);
 
     const auto visible_range = initialVisibleRange(dataset_info_.tick_range);
     auto first_status = data::ScheduleSubmitStatus::Scheduled;
@@ -192,6 +250,64 @@ data::ScheduleSubmitStatus DataLoadController::request_window_async(
     return submit_window_async(std::move(request), workspace, receiver, std::move(callback));
 }
 
+void DataLoadController::set_replay_enabled(bool enabled, chart::ChartWorkspaceWidget& workspace)
+{
+    if (dataset_path_.empty()) {
+        throw std::runtime_error("no dataset loaded");
+    }
+    if (enabled) {
+        configure_replay(workspace, replayStartTime(workspace, dataset_info_));
+    }
+    replay_session_->set_enabled(enabled);
+}
+
+bool DataLoadController::replay_enabled() const
+{
+    return replay_session_->enabled();
+}
+
+bool DataLoadController::replay_playing() const
+{
+    return replay_session_->playing();
+}
+
+bool DataLoadController::toggle_replay_playing()
+{
+    if (dataset_path_.empty()) {
+        throw std::runtime_error("no dataset loaded");
+    }
+    return replay_session_->toggle_playing();
+}
+
+void DataLoadController::set_replay_speed(int speed)
+{
+    replay_session_->set_speed(speed);
+}
+
+int DataLoadController::replay_speed() const
+{
+    return replay_session_->speed();
+}
+
+ReplayUpdateResult DataLoadController::advance_replay_by(std::int64_t delta_ns, chart::ChartWorkspaceWidget& workspace)
+{
+    if (dataset_path_.empty()) {
+        throw std::runtime_error("no dataset loaded");
+    }
+    if (!replay_session_->enabled()) {
+        throw std::runtime_error("replay mode is not enabled");
+    }
+
+    const auto frame = replay_session_->advance_by(delta_ns);
+    return apply_replay_windows(frame, workspace);
+}
+
+ReplayUpdateResult DataLoadController::advance_replay_by_speed(chart::ChartWorkspaceWidget& workspace)
+{
+    const auto delta_ns = static_cast<std::int64_t>(replay_session_->speed()) * kNanosecondsPerSecond;
+    return advance_replay_by(delta_ns, workspace);
+}
+
 data::ScheduleSubmitStatus DataLoadController::submit_window_async(
     data::CandleWindowRequest request,
     chart::ChartWorkspaceWidget& workspace,
@@ -216,6 +332,52 @@ data::ScheduleSubmitStatus DataLoadController::submit_window_async(
                 callback(std::move(load_result));
             }
         });
+}
+
+void DataLoadController::configure_replay(chart::ChartWorkspaceWidget& workspace, std::int64_t start_time_ns)
+{
+    replay::ReplayConfig config;
+    config.dataset_range = dataset_info_.tick_range;
+    config.periods = replayPeriods(workspace, requested_period_);
+    config.start_time_ns = start_time_ns;
+    config.max_ticks_per_frame = kReplayMaxTicksPerFrame;
+    config.max_bars_per_period = kReplayMaxBarsPerPeriod;
+    replay_session_->configure(std::move(config));
+}
+
+ReplayUpdateResult DataLoadController::apply_replay_windows(
+    const replay::ReplayAdvanceResult& frame,
+    chart::ChartWorkspaceWidget& workspace)
+{
+    ReplayUpdateResult result;
+    result.current_time_ns = replay_session_->current_time_ns();
+    result.ticks_consumed = frame.ticks_consumed;
+    result.enabled = replay_session_->enabled();
+    result.playing = replay_session_->playing();
+    result.reached_end = frame.reached_end;
+
+    for (const auto chart_id : workspace.enabled_chart_ids()) {
+        auto period = workspace.requested_period(chart_id);
+        if (period.empty()) {
+            period = requested_period_;
+        }
+
+        auto replay_window = replay_session_->window_for_period(
+            period,
+            chart_id,
+            0,
+            replayVisibleRange(*replay_session_, period, dataset_info_));
+        if (!replay_window.has_value()) {
+            continue;
+        }
+
+        replay_window->generation = workspace.chart_view(chart_id).bump_generation();
+        if (workspace.apply_window(std::move(*replay_window))) {
+            result.applied_window = true;
+        }
+    }
+
+    return result;
 }
 
 } // namespace tradereview::app

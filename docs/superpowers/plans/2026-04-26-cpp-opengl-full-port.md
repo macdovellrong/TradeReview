@@ -312,13 +312,13 @@
 - Create: `native/tests/replay/test_replay_session.cpp`
 - Modify: `native/tests/CMakeLists.txt`
 
-- [ ] Add replay enabled/play/pause/speed/step state.
-- [ ] Query tick chunks with a per-frame tick cap.
-- [ ] Maintain per-period bar builders.
-- [ ] Update the active candle incrementally.
-- [ ] Stop at dataset end and update controls.
-- [ ] Static verification: `rg -n "ReplaySession|BarBuilder|max_ticks|advance|Replay Mode|Speed" native`.
-- [ ] Commit with message: `实现C++分块回放基础`.
+- [x] Add replay enabled/play/pause/speed/step state.
+- [x] Query tick chunks with a per-frame tick cap.
+- [x] Maintain per-period bar builders.
+- [x] Update the active candle incrementally.
+- [x] Stop at dataset end and update controls.
+- [x] Static verification: `rg -n "ReplaySession|BarBuilder|max_ticks|advance|Replay Mode|Speed" native`.
+- [x] Commit with message: `实现C++分块回放基础`.
 
 ### Task 13: Time Navigation and Session State
 
@@ -610,3 +610,25 @@
 - `git diff --check` exited 0 with only LF-to-CRLF notices.
 - No native exe was launched.
 - Next task: Task 12, chunked replay.
+
+### 2026-04-26 Task 12 Completed
+
+- Added `ReplaySession` and `BarBuilder` so native replay can stream capped tick chunks, build per-period OHLCV bars incrementally, keep active candles updated, seek/reset builders, and stop playback at dataset end.
+- Implemented DuckDB `query_ticks` and `(from, to]` `query_replay_ticks` chunk queries, including reached-end detection, and serialized repository calls with a mutex so replay queries do not race the async window scheduler on the same DuckDB connection.
+- Wired `Replay Mode`, play/pause, back/forward step, speed controls, and a 100ms replay timer through `MainControlsBar`, `MainWindow`, and `DataLoadController`.
+- Added native tests for active-bar updates, gap/trim behavior, replay tick caps, dataset-end stop/pause, seek clearing builders, and DuckDB replay chunk boundaries.
+- Verified RED first:
+  - OFF test build failed before implementation on missing `tradereview/replay/ReplaySession.h` and `tradereview/replay/BarBuilder.h`;
+  - DuckDB ON test failed before repository implementation on `DuckDB replay query is not implemented yet`.
+- Verified with `C:\Build\TradeReview-native-task11-off-msvc` using DuckDB OFF:
+  - full Debug build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task11-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Verified with `C:\Build\TradeReview-native-task11-on-msvc` using DuckDB ON:
+  - full Debug build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task11-on-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`;
+  - MSVC still emits the existing DuckDB ON `/EHsc` warning, non-fatal.
+- Static verification: `rg -n "ReplaySession|BarBuilder|max_ticks|advance|Replay Mode|Speed" native --glob '!native/build/**' --glob '!native-build*/**'`.
+- `git diff --check` exited 0 with only LF-to-CRLF notices.
+- No native exe was launched.
+- Known follow-up: replay currently rebuilds forward from the seek point and does not warm up historical indicator values; moving replay chunk requests behind a scheduler-style service remains a future robustness improvement.
+- Next task: Task 13, time navigation and session state.

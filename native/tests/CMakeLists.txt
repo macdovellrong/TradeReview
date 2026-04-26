@@ -22,6 +22,8 @@ add_executable(tradereview_native_tests
     drawing/test_drawing_interaction_state.cpp
     drawing/test_drawing_session.cpp
     drawing/test_fib_math.cpp
+    replay/test_bar_builder.cpp
+    replay/test_replay_session.cpp
     sync/test_crosshair_sync.cpp
     test_main.cpp
 )

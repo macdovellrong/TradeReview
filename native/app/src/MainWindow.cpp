@@ -12,6 +12,7 @@
 #include <QString>
 #include <QStatusBar>
 #include <QTimeZone>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -71,6 +72,16 @@ QString pendingMessage(data::ScheduleSubmitStatus status)
     return "Loading window...";
 }
 
+QString replayMessage(const ReplayUpdateResult& result)
+{
+    if (result.reached_end) {
+        return QString("Replay reached end at %1").arg(formatTimestamp(result.current_time_ns));
+    }
+    return QString("Replay %1, %2 tick(s)")
+        .arg(formatTimestamp(result.current_time_ns))
+        .arg(static_cast<qulonglong>(result.ticks_consumed));
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -117,6 +128,42 @@ MainWindow::MainWindow(QWidget* parent)
         chartWorkspace->setChartCount(count);
         statusBar()->showMessage(QString("Charts %1").arg(count));
     });
+    mainControls->setReplayModeCallback([this, chartWorkspace, mainControls](bool enabled) {
+        try {
+            data_load_controller_->set_replay_enabled(enabled, *chartWorkspace);
+            mainControls->setReplayControlsEnabled(enabled);
+            mainControls->setReplayPlaying(false);
+            statusBar()->showMessage(enabled ? "Replay Mode enabled" : "Replay Mode disabled");
+        } catch (const std::exception& error) {
+            mainControls->setReplayControlsEnabled(false);
+            mainControls->setReplayPlaying(false);
+            statusBar()->showMessage(QString("Replay Mode failed: ") + error.what());
+        }
+    });
+    mainControls->setReplayPlayCallback([this, mainControls]() {
+        try {
+            const auto playing = data_load_controller_->toggle_replay_playing();
+            mainControls->setReplayPlaying(playing);
+            statusBar()->showMessage(playing ? "Replay playing" : "Replay paused");
+        } catch (const std::exception& error) {
+            mainControls->setReplayPlaying(false);
+            statusBar()->showMessage(QString("Replay play failed: ") + error.what());
+        }
+    });
+    mainControls->setReplayStepCallback([this, chartWorkspace, mainControls](std::int64_t delta_ns) {
+        try {
+            const auto result = data_load_controller_->advance_replay_by(delta_ns, *chartWorkspace);
+            mainControls->setReplayPlaying(result.playing);
+            statusBar()->showMessage(replayMessage(result));
+        } catch (const std::exception& error) {
+            mainControls->setReplayPlaying(false);
+            statusBar()->showMessage(QString("Replay step failed: ") + error.what());
+        }
+    });
+    mainControls->setReplaySpeedCallback([this](int speed) {
+        data_load_controller_->set_replay_speed(speed);
+        statusBar()->showMessage(QString("Replay Speed %1x").arg(speed));
+    });
     mainControls->setLoadDataCallback([this, chartWorkspace]() {
         const auto path = QFileDialog::getOpenFileName(this, "Load DuckDB Data", QString(), "DuckDB (*.duckdb)");
         if (path.isEmpty()) {
@@ -140,6 +187,24 @@ MainWindow::MainWindow(QWidget* parent)
     centralLayout->addWidget(mainControls);
     centralLayout->addWidget(chartWorkspace, 1);
     setCentralWidget(central);
+
+    auto* replayTimer = new QTimer(this);
+    connect(replayTimer, &QTimer::timeout, this, [this, chartWorkspace, mainControls]() {
+        if (!data_load_controller_->replay_playing()) {
+            return;
+        }
+        try {
+            const auto result = data_load_controller_->advance_replay_by_speed(*chartWorkspace);
+            mainControls->setReplayPlaying(result.playing);
+            if (result.reached_end) {
+                statusBar()->showMessage(replayMessage(result));
+            }
+        } catch (const std::exception& error) {
+            mainControls->setReplayPlaying(false);
+            statusBar()->showMessage(QString("Replay timer failed: ") + error.what());
+        }
+    });
+    replayTimer->start(100);
 
     statusBar()->showMessage("Native OpenGL chart ready");
 }

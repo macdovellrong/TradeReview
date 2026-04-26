@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -231,6 +232,7 @@ public:
 
     DataSetInfo open_readonly(const std::string& path)
     {
+        std::lock_guard lock(mutex_);
 #if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
         close();
 
@@ -269,6 +271,7 @@ public:
 
     CandleWindow query_candles(const CandleWindowRequest& request)
     {
+        std::lock_guard lock(mutex_);
 #if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
         const auto table_name = duckdb_candle_table_for_period(request.requested_period);
         const auto schema = table_schema(table_name);
@@ -341,8 +344,102 @@ public:
 #endif
     }
 
-private:
+    TickSlice query_ticks(core::TimeRange range, size_t max_rows)
+    {
+        std::lock_guard lock(mutex_);
 #if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
+        if (max_rows == 0) {
+            return {};
+        }
+
+        const auto schema = table_schema("ticks");
+        throw_if_schema_invalid(validate_ticks_schema(schema), "ticks");
+        const auto timestamp_name = timestamp_column(schema);
+
+        std::ostringstream sql;
+        sql << "SELECT epoch_us(" << quoted_identifier(timestamp_name) << "), price, volume"
+            << " FROM ticks"
+            << " WHERE epoch_us(" << quoted_identifier(timestamp_name) << ") BETWEEN " << ns_to_us(range.start_ns)
+            << " AND " << ns_to_us(range.end_ns)
+            << " ORDER BY " << quoted_identifier(timestamp_name)
+            << " LIMIT " << max_rows;
+
+        return tick_slice_from_query(sql.str());
+#else
+        (void)range;
+        (void)max_rows;
+        throw_duckdb_unavailable();
+#endif
+    }
+
+    ReplayChunk query_replay_ticks(std::int64_t from_ns, std::int64_t to_ns, std::size_t max_ticks)
+    {
+        std::lock_guard lock(mutex_);
+#if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
+        ReplayChunk chunk;
+        if (max_ticks == 0 || to_ns <= from_ns) {
+            chunk.reached_end = !has_tick_after(from_ns);
+            return chunk;
+        }
+
+        const auto schema = table_schema("ticks");
+        throw_if_schema_invalid(validate_ticks_schema(schema), "ticks");
+        const auto timestamp_name = timestamp_column(schema);
+
+        std::ostringstream sql;
+        sql << "SELECT epoch_us(" << quoted_identifier(timestamp_name) << "), price, volume"
+            << " FROM ticks"
+            << " WHERE epoch_us(" << quoted_identifier(timestamp_name) << ") > " << ns_to_us(from_ns)
+            << " AND epoch_us(" << quoted_identifier(timestamp_name) << ") <= " << ns_to_us(to_ns)
+            << " ORDER BY " << quoted_identifier(timestamp_name)
+            << " LIMIT " << max_ticks;
+
+        chunk.ticks = tick_slice_from_query(sql.str());
+        const auto cursor_ns = chunk.ticks.timestamp_ns.empty() ? to_ns : chunk.ticks.timestamp_ns.back();
+        chunk.reached_end = !has_tick_after(cursor_ns);
+        return chunk;
+#else
+        (void)from_ns;
+        (void)to_ns;
+        (void)max_ticks;
+        throw_duckdb_unavailable();
+#endif
+    }
+
+private:
+    std::mutex mutex_;
+
+#if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
+    TickSlice tick_slice_from_query(const std::string& sql)
+    {
+        auto result = query(sql);
+        const auto rows = duckdb_row_count(result.get());
+
+        TickSlice slice;
+        const auto row_count = static_cast<std::size_t>(rows);
+        slice.timestamp_ns.reserve(row_count);
+        slice.price.reserve(row_count);
+        slice.volume.reserve(row_count);
+        for (idx_t row = 0; row < rows; ++row) {
+            slice.timestamp_ns.push_back(us_to_ns(duckdb_value_int64(result.get(), 0, row)));
+            slice.price.push_back(duckdb_value_double(result.get(), 1, row));
+            slice.volume.push_back(duckdb_value_double(result.get(), 2, row));
+        }
+        return slice;
+    }
+
+    bool has_tick_after(std::int64_t timestamp_ns)
+    {
+        const auto schema = table_schema("ticks");
+        throw_if_schema_invalid(validate_ticks_schema(schema), "ticks");
+        const auto timestamp_name = timestamp_column(schema);
+
+        auto result = query(
+            "SELECT 1 FROM ticks WHERE epoch_us(" + quoted_identifier(timestamp_name) + ") > " +
+            std::to_string(ns_to_us(timestamp_ns)) + " LIMIT 1");
+        return duckdb_row_count(result.get()) > 0;
+    }
+
     void load_tick_metadata(DataSetInfo& info)
     {
         const auto schema = table_schema("ticks");
@@ -410,25 +507,12 @@ CandleWindow DuckDbRepository::query_candles(const CandleWindowRequest& request)
 
 TickSlice DuckDbRepository::query_ticks(core::TimeRange range, size_t max_rows)
 {
-    (void)range;
-    (void)max_rows;
-#if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
-    throw std::runtime_error("DuckDB tick query is not implemented yet");
-#else
-    throw_duckdb_unavailable();
-#endif
+    return impl_->query_ticks(range, max_rows);
 }
 
 ReplayChunk DuckDbRepository::query_replay_ticks(int64_t from_ns, int64_t to_ns, size_t max_ticks)
 {
-    (void)from_ns;
-    (void)to_ns;
-    (void)max_ticks;
-#if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
-    throw std::runtime_error("DuckDB replay query is not implemented yet");
-#else
-    throw_duckdb_unavailable();
-#endif
+    return impl_->query_replay_ticks(from_ns, to_ns, max_ticks);
 }
 
 } // namespace tradereview::data

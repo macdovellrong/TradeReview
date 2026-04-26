@@ -1,12 +1,15 @@
-add_library(tradereview_replay INTERFACE)
+add_library(tradereview_replay STATIC
+    src/BarBuilder.cpp
+    src/ReplaySession.cpp
+)
 
 target_include_directories(tradereview_replay
-    INTERFACE
+    PUBLIC
         include
 )
 
 target_link_libraries(tradereview_replay
-    INTERFACE
+    PUBLIC
         tradereview_core
         tradereview_data
 )

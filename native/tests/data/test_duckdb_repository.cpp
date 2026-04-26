@@ -153,6 +153,23 @@ void test_duckdb_repository_reads_metadata_and_candle_window()
     tradereview::core::assert_equal(empty_window.row_count(), std::size_t{0}, "empty window row count");
     tradereview::core::assert_true(!empty_window.has_loaded_range(), "empty window has no loaded range");
 
+    const auto first_chunk = repository.query_replay_ticks(
+        1704067200000000000,
+        1704067260000001000,
+        2);
+    tradereview::core::assert_equal(first_chunk.ticks.timestamp_ns.size(), std::size_t{2}, "first replay chunk tick count");
+    tradereview::core::assert_equal(first_chunk.ticks.timestamp_ns.front(), std::int64_t{1704067200000001000}, "first replay tick");
+    tradereview::core::assert_near(first_chunk.ticks.price.back(), 101.0, 0.000001, "first replay chunk last price");
+    tradereview::core::assert_true(!first_chunk.reached_end, "first replay chunk has more ticks");
+
+    const auto final_chunk = repository.query_replay_ticks(
+        first_chunk.ticks.timestamp_ns.back(),
+        1704067320000001000,
+        10);
+    tradereview::core::assert_equal(final_chunk.ticks.timestamp_ns.size(), std::size_t{1}, "final replay chunk tick count");
+    tradereview::core::assert_equal(final_chunk.ticks.timestamp_ns.back(), std::int64_t{1704067320000001000}, "final replay tick");
+    tradereview::core::assert_true(final_chunk.reached_end, "final replay chunk reaches dataset end");
+
     std::filesystem::remove(path);
     std::filesystem::remove(path.string() + ".wal");
 }
