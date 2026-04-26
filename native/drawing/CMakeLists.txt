@@ -1,11 +1,15 @@
-add_library(tradereview_drawing INTERFACE)
+add_library(tradereview_drawing STATIC
+    src/DrawingSpec.cpp
+    src/FibMath.cpp
+    src/FibSettings.cpp
+)
 
 target_include_directories(tradereview_drawing
-    INTERFACE
+    PUBLIC
         include
 )
 
 target_link_libraries(tradereview_drawing
-    INTERFACE
+    PUBLIC
         tradereview_core
 )

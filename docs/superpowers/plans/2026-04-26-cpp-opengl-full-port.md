@@ -264,12 +264,12 @@
 - Create: `native/tests/drawing/test_fib_math.cpp`
 - Modify: `native/tests/CMakeLists.txt`
 
-- [ ] Add drawing point/spec types using timestamp/price canonical coordinates.
-- [ ] Normalize line, horizontal, vertical, Fib, and Fib extension specs.
-- [ ] Implement Fib retracement and extension level generation matching Python tests.
-- [ ] Snapshot Fib settings into created drawing specs.
-- [ ] Static verification: `rg -n "DrawingSpec|FibMath|FibSettings|retracement|extension|timestamp_ns" native`.
-- [ ] Commit with message: `移植C++绘图规格和Fib计算`.
+- [x] Add drawing point/spec types using timestamp/price canonical coordinates.
+- [x] Normalize line, horizontal, vertical, Fib, and Fib extension specs.
+- [x] Implement Fib retracement and extension level generation matching Python tests.
+- [x] Snapshot Fib settings into created drawing specs.
+- [x] Static verification: `rg -n "DrawingSpec|FibMath|FibSettings|retracement|extension|timestamp_ns" native`.
+- [x] Commit with message: `移植C++绘图规格和Fib计算`.
 
 ### Task 11: Drawing Interaction and Rendering
 
@@ -558,3 +558,26 @@
 - `git diff --check` exited 0 with only LF-to-CRLF notices.
 - No native exe was launched.
 - Next task: Task 10, drawing store and Fib math.
+
+### 2026-04-26 Task 10 Completed
+
+- Added the native drawing module types for canonical `timestamp_ns`/`price` points, drawing type requirements, normalized drawing specs, and Fib snapshot storage.
+- Added native Fib settings support with Python-matching default retracement and extension presets, custom-level merge parsing, sorting, deduplication, and validation.
+- Added native Fib math for retracement and standard A-B-C extension projection, matching the existing Python unit-test price expectations.
+- Added drawing tests for point coordinates, point-count normalization across hline/vline/line/fib/fib_ext, missing-point rejection, Fib snapshot immutability, default presets, level merge behavior, and retracement/extension prices.
+- Verified RED first:
+  - OFF test build failed before implementation on missing `tradereview/drawing/DrawingSpec.h`;
+  - OFF test build failed before implementation on missing `tradereview/drawing/FibMath.h`.
+- Verified with `C:\Build\TradeReview-native-task10-off-msvc` using DuckDB OFF:
+  - configure exited 0;
+  - `cmake --build C:\Build\TradeReview-native-task10-off-msvc --target tradereview_native_tests --config Debug` exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task10-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`;
+  - full build exited 0.
+- Verified with `C:\Build\TradeReview-native-task10-msvc` using DuckDB ON:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task10-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Static verification: `rg -n "DrawingSpec|FibMath|FibSettings|retracement|extension|timestamp_ns" native --glob '!build/**'`.
+- `git diff --check` exited 0 with only LF-to-CRLF notices.
+- No native exe was launched.
+- Next task: Task 11, drawing interaction and rendering.

@@ -16,6 +16,8 @@ add_executable(tradereview_native_tests
     data/test_duckdb_repository.cpp
     data/test_duckdb_schema.cpp
     data/test_window_cache.cpp
+    drawing/test_drawing_spec.cpp
+    drawing/test_fib_math.cpp
     sync/test_crosshair_sync.cpp
     test_main.cpp
 )
