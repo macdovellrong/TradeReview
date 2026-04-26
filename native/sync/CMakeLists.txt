@@ -1,11 +1,13 @@
-add_library(tradereview_sync INTERFACE)
+add_library(tradereview_sync STATIC
+    src/CrosshairSyncController.cpp
+)
 
 target_include_directories(tradereview_sync
-    INTERFACE
+    PUBLIC
         include
 )
 
 target_link_libraries(tradereview_sync
-    INTERFACE
+    PUBLIC
         tradereview_core
 )

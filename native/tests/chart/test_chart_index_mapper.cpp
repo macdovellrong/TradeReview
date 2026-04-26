@@ -84,6 +84,17 @@ void test_mapper_uses_default_positive_step_for_duplicate_timestamps()
         "duplicate timestamps use default positive step");
 }
 
+void test_mapper_maps_timestamp_to_fractional_dense_x()
+{
+    tradereview::chart::ChartIndexMapper mapper;
+    mapper.set_timestamps(std::vector<std::int64_t>{100, 200, 300});
+
+    tradereview::core::assert_near(mapper.dense_x_from_timestamp(150), 0.5, 0.000001, "interpolated dense x");
+    tradereview::core::assert_near(mapper.dense_x_from_timestamp(250), 1.5, 0.000001, "second interval dense x");
+    tradereview::core::assert_near(mapper.dense_x_from_timestamp(50), -0.5, 0.000001, "left extrapolated dense x");
+    tradereview::core::assert_near(mapper.dense_x_from_timestamp(400), 3.0, 0.000001, "right extrapolated dense x");
+}
+
 void test_empty_mapper_nearest_dense_x_throws_runtime_error()
 {
     tradereview::chart::ChartIndexMapper mapper;
@@ -118,6 +129,9 @@ struct RegisterChartIndexMapperTests {
         tradereview::tests::register_test(
             "mapper uses default positive step for duplicate timestamps",
             test_mapper_uses_default_positive_step_for_duplicate_timestamps);
+        tradereview::tests::register_test(
+            "mapper maps timestamp to fractional dense x",
+            test_mapper_maps_timestamp_to_fractional_dense_x);
         tradereview::tests::register_test(
             "empty mapper nearest_dense_x throws runtime_error",
             test_empty_mapper_nearest_dense_x_throws_runtime_error);

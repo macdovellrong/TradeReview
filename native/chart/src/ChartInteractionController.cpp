@@ -94,6 +94,24 @@ void ChartInteractionController::set_visible_dense_range(DenseRange range)
     visible_dense_range_ = normalized_range(range);
 }
 
+bool ChartInteractionController::center_on_dense_x(double dense_x)
+{
+    if (!std::isfinite(dense_x) || visible_dense_range_.span() <= 0.0) {
+        return false;
+    }
+
+    const auto span = visible_dense_range_.span();
+    const auto next_range = DenseRange{
+        dense_x - (span * 0.5),
+        dense_x + (span * 0.5),
+    };
+    if (next_range.start_x == visible_dense_range_.start_x && next_range.end_x == visible_dense_range_.end_x) {
+        return false;
+    }
+    set_visible_dense_range(next_range);
+    return true;
+}
+
 void ChartInteractionController::pan_by_pixels(double pixel_delta_x, int viewport_width)
 {
     if (!std::isfinite(pixel_delta_x) || viewport_width <= 0 || visible_dense_range_.span() <= 0.0) {

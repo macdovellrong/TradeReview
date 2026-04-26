@@ -103,6 +103,18 @@ void test_wheel_delta_scale_uses_magnitude_and_pixel_delta()
         "negative touchpad pixel delta zooms out");
 }
 
+void test_center_on_dense_x_preserves_visible_span()
+{
+    tradereview::chart::ChartInteractionController controller;
+    controller.set_visible_dense_range({10.0, 50.0});
+
+    tradereview::core::assert_true(controller.center_on_dense_x(100.0), "center change is accepted");
+    const auto range = controller.visible_dense_range();
+
+    tradereview::core::assert_near(range.start_x, 80.0, 0.000001, "centered range start");
+    tradereview::core::assert_near(range.end_x, 120.0, 0.000001, "centered range end");
+}
+
 void test_reload_not_requested_inside_right_padding()
 {
     tradereview::chart::ChartInteractionController controller;
@@ -149,6 +161,9 @@ struct RegisterChartInteractionTests {
         tradereview::tests::register_test(
             "interaction wheel delta scale uses magnitude and pixel delta",
             test_wheel_delta_scale_uses_magnitude_and_pixel_delta);
+        tradereview::tests::register_test(
+            "interaction center on dense x preserves visible span",
+            test_center_on_dense_x_preserves_visible_span);
         tradereview::tests::register_test(
             "interaction reload not requested inside right padding",
             test_reload_not_requested_inside_right_padding);

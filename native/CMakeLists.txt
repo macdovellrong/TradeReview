@@ -22,10 +22,10 @@ endif()
 
 add_subdirectory(core)
 add_subdirectory(data)
+add_subdirectory(sync)
 add_subdirectory(chart)
 add_subdirectory(drawing)
 add_subdirectory(replay)
-add_subdirectory(sync)
 
 if(TRADEREVIEW_NATIVE_BUILD_APP)
     add_subdirectory(app)

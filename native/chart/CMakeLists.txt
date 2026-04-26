@@ -29,6 +29,7 @@ target_link_libraries(tradereview_chart
     PUBLIC
         tradereview_core
         tradereview_data
+        tradereview_sync
         Qt6::Widgets
         Qt6::OpenGL
         Qt6::OpenGLWidgets

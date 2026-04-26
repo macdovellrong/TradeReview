@@ -5,12 +5,14 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "tradereview/chart/ChartWorkspaceState.h"
 #include "tradereview/core/TimeRange.h"
 #include "tradereview/data/CandleWindow.h"
+#include "tradereview/sync/CrosshairSyncController.h"
 
 class QString;
 
@@ -46,11 +48,18 @@ public:
     [[nodiscard]] std::vector<std::uint64_t> enabled_chart_ids() const;
     [[nodiscard]] std::size_t chart_count() const;
     [[nodiscard]] ChartLayoutMode layout_mode() const;
+    bool syncCrosshairFrom(std::uint64_t source_chart_id, std::int64_t timestamp_ns, double price);
+    bool syncCenterFrom(
+        std::uint64_t source_chart_id,
+        std::int64_t timestamp_ns,
+        std::optional<double> price = std::nullopt);
+    bool syncYCenterFrom(std::uint64_t source_chart_id, double price);
 
 private:
     void rebuild_layout();
     void reset_content_widget();
     void connect_panel(ChartPanelWidget& panel);
+    void refresh_sync_enabled_charts();
 
     ChartWorkspaceState state_;
     QVBoxLayout* root_layout_ = nullptr;
@@ -58,6 +67,7 @@ private:
     std::vector<ChartPanelWidget*> panels_;
     StatusCallback status_callback_;
     ReloadRequestCallback reload_request_callback_;
+    sync::CrosshairSyncController crosshair_sync_controller_;
 };
 
 } // namespace tradereview::chart

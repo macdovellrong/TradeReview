@@ -1,12 +1,93 @@
 #include "tradereview/chart/ChartViewWidget.h"
 
+#include "tradereview/chart/PaneLayout.h"
+
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QWheelEvent>
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <limits>
+#include <optional>
 #include <utility>
 
 namespace tradereview::chart {
+namespace {
+
+[[nodiscard]] bool finite_candle_row(const data::CandleWindow& window, std::size_t row)
+{
+    return std::isfinite(window.high[row]) && std::isfinite(window.low[row]);
+}
+
+[[nodiscard]] DenseRange normalized_visible_range(DenseRange range)
+{
+    if (!std::isfinite(range.start_x) || !std::isfinite(range.end_x)) {
+        return {0.0, 1.0};
+    }
+    if (range.end_x < range.start_x) {
+        std::swap(range.start_x, range.end_x);
+    }
+    if (range.end_x <= range.start_x) {
+        range.end_x = range.start_x + 1.0;
+    }
+    return range;
+}
+
+[[nodiscard]] std::optional<std::pair<std::size_t, std::size_t>> visible_row_bounds(DenseRange range, std::size_t rows)
+{
+    if (rows == 0) {
+        return std::nullopt;
+    }
+
+    const auto first_visible_row = std::ceil(range.start_x);
+    const auto last_visible_row = std::floor(range.end_x);
+    if (last_visible_row < 0.0 || first_visible_row > static_cast<double>(rows - 1)) {
+        return std::nullopt;
+    }
+
+    const auto first_row = static_cast<std::size_t>(std::max(0.0, first_visible_row));
+    const auto last_row = static_cast<std::size_t>(std::min(static_cast<double>(rows - 1), last_visible_row));
+    if (last_row < first_row) {
+        return std::nullopt;
+    }
+    return std::pair{first_row, last_row};
+}
+
+[[nodiscard]] std::optional<std::pair<double, double>> visible_price_range(
+    const data::CandleWindow& window,
+    DenseRange visible_dense_range)
+{
+    if (window.empty() || !window.has_consistent_ohlcv()) {
+        return std::nullopt;
+    }
+
+    const auto bounds = visible_row_bounds(normalized_visible_range(visible_dense_range), window.row_count());
+    if (!bounds.has_value()) {
+        return std::nullopt;
+    }
+
+    auto min_price = std::numeric_limits<double>::max();
+    auto max_price = std::numeric_limits<double>::lowest();
+    for (auto row = bounds->first; row <= bounds->second; ++row) {
+        if (!finite_candle_row(window, row)) {
+            continue;
+        }
+        min_price = std::min(min_price, window.low[row]);
+        max_price = std::max(max_price, window.high[row]);
+    }
+
+    if (min_price == std::numeric_limits<double>::max() || max_price == std::numeric_limits<double>::lowest()) {
+        return std::nullopt;
+    }
+    if (max_price <= min_price) {
+        max_price = min_price + 1.0;
+    }
+    return std::pair{min_price, max_price};
+}
+
+} // namespace
 
 ChartViewWidget::ChartViewWidget(QWidget* parent)
     : QOpenGLWidget(parent)
@@ -98,6 +179,11 @@ void ChartViewWidget::set_reload_request_callback(ReloadRequestCallback callback
     reload_request_callback_ = std::move(callback);
 }
 
+void ChartViewWidget::set_crosshair_moved_callback(CrosshairMovedCallback callback)
+{
+    crosshair_moved_callback_ = std::move(callback);
+}
+
 void ChartViewWidget::request_current_visible_window()
 {
     if (!reload_request_callback_ || scene_model_.index_mapper().empty()) {
@@ -112,6 +198,65 @@ void ChartViewWidget::request_current_visible_window()
     reload_request_callback_(visible_range);
     has_last_reload_request_ = true;
     last_reload_request_ = visible_range;
+}
+
+std::optional<double> ChartViewWidget::dense_x_for_timestamp(std::int64_t timestamp_ns) const
+{
+    if (scene_model_.index_mapper().empty()) {
+        return std::nullopt;
+    }
+    return scene_model_.index_mapper().dense_x_from_timestamp(timestamp_ns);
+}
+
+void ChartViewWidget::sync_crosshair(std::int64_t timestamp_ns, double price, double dense_x)
+{
+    if (!std::isfinite(price) || !std::isfinite(dense_x)) {
+        return;
+    }
+    crosshair_state_ = ChartCrosshairState{timestamp_ns, price, dense_x};
+    update();
+}
+
+bool ChartViewWidget::sync_center_on_timestamp(std::int64_t timestamp_ns, std::optional<double> price)
+{
+    const auto dense_x = dense_x_for_timestamp(timestamp_ns);
+    if (!dense_x.has_value()) {
+        return false;
+    }
+
+    const auto centered = interaction_.center_on_dense_x(*dense_x);
+    if (centered) {
+        apply_interaction_update();
+    }
+
+    auto y_centered = false;
+    if (price.has_value()) {
+        y_centered = sync_y_center(*price);
+    }
+    return centered || y_centered;
+}
+
+bool ChartViewWidget::sync_y_center(double price)
+{
+    if (!std::isfinite(price)) {
+        return false;
+    }
+    if (synced_y_center_price_.has_value() && *synced_y_center_price_ == price) {
+        return false;
+    }
+    synced_y_center_price_ = price;
+    update();
+    return true;
+}
+
+std::optional<ChartCrosshairState> ChartViewWidget::crosshair_state() const
+{
+    return crosshair_state_;
+}
+
+std::optional<double> ChartViewWidget::synced_y_center_price() const
+{
+    return synced_y_center_price_;
 }
 
 const ChartSceneModel& ChartViewWidget::scene_model() const
@@ -164,6 +309,15 @@ void ChartViewWidget::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
+    const auto crosshair = crosshair_from_position(event->position());
+    if (crosshair.has_value()) {
+        crosshair_state_ = *crosshair;
+        if (crosshair_moved_callback_) {
+            crosshair_moved_callback_(crosshair->timestamp_ns, crosshair->price);
+        }
+        update();
+    }
+
     QOpenGLWidget::mouseMoveEvent(event);
 }
 
@@ -212,6 +366,47 @@ void ChartViewWidget::apply_interaction_update()
     if (range_changed) {
         update();
     }
+}
+
+std::optional<ChartCrosshairState> ChartViewWidget::crosshair_from_position(QPointF position) const
+{
+    if (scene_model_.index_mapper().empty() || width() <= 0 || height() <= 0) {
+        return std::nullopt;
+    }
+
+    const auto price = price_at_pixel_y(position.y());
+    if (!price.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto dense_x = dense_x_at_pixel(position.x());
+    return ChartCrosshairState{
+        scene_model_.index_mapper().timestamp_from_x(dense_x),
+        *price,
+        dense_x,
+    };
+}
+
+double ChartViewWidget::dense_x_at_pixel(double pixel_x) const
+{
+    const auto range = scene_model_.visible_dense_range();
+    const auto span = std::max(range.span(), 1.0);
+    const auto fraction = std::clamp(pixel_x / static_cast<double>(std::max(width(), 1)), 0.0, 1.0);
+    return range.start_x + (span * fraction);
+}
+
+std::optional<double> ChartViewWidget::price_at_pixel_y(double pixel_y) const
+{
+    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    if (!price_range.has_value() || height() <= 0) {
+        return std::nullopt;
+    }
+
+    const auto pane = build_pane_layout(scene_model_.indicator_panels_enabled()).price;
+    const auto normalized_device_y = 1.0 - (2.0 * (pixel_y / static_cast<double>(height())));
+    const auto pane_fraction =
+        (normalized_device_y - static_cast<double>(pane.bottom)) / static_cast<double>(std::max(pane.height(), 0.000001F));
+    return price_range->first + ((price_range->second - price_range->first) * pane_fraction);
 }
 
 } // namespace tradereview::chart

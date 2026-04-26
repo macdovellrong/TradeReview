@@ -74,6 +74,36 @@ int ChartIndexMapper::nearest_dense_x(std::int64_t timestamp_ns) const
     return static_cast<int>(std::distance(timestamps_.begin(), right));
 }
 
+double ChartIndexMapper::dense_x_from_timestamp(std::int64_t timestamp_ns) const
+{
+    if (timestamps_.empty()) {
+        throw std::runtime_error("cannot map timestamp in empty ChartIndexMapper");
+    }
+
+    const auto right = std::lower_bound(timestamps_.begin(), timestamps_.end(), timestamp_ns);
+    if (right == timestamps_.begin()) {
+        const auto step = static_cast<double>(step_ns());
+        return static_cast<double>(timestamp_ns - timestamps_.front()) / step;
+    }
+    if (right == timestamps_.end()) {
+        const auto step = static_cast<double>(step_ns());
+        return static_cast<double>(timestamps_.size() - 1) + (static_cast<double>(timestamp_ns - timestamps_.back()) / step);
+    }
+    if (*right == timestamp_ns) {
+        return static_cast<double>(std::distance(timestamps_.begin(), right));
+    }
+
+    const auto left = right - 1;
+    const auto interval = *right - *left;
+    if (interval <= 0) {
+        return static_cast<double>(nearest_dense_x(timestamp_ns));
+    }
+
+    const auto left_x = static_cast<double>(std::distance(timestamps_.begin(), left));
+    const auto fraction = static_cast<double>(timestamp_ns - *left) / static_cast<double>(interval);
+    return left_x + fraction;
+}
+
 std::int64_t ChartIndexMapper::timestamp_at_dense_x(int dense_x) const
 {
     if (dense_x < 0 || static_cast<std::size_t>(dense_x) >= timestamps_.size()) {

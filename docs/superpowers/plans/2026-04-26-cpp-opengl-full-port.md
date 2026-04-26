@@ -241,12 +241,12 @@
 - Create: `native/tests/sync/test_crosshair_sync.cpp`
 - Modify: `native/tests/CMakeLists.txt`
 
-- [ ] Emit crosshair updates as canonical timestamp/price.
-- [ ] Convert incoming timestamp to each chart's local dense x.
-- [ ] Skip disabled source charts and avoid feedback loops.
-- [ ] Add center-time sync and optional Y-center sync.
-- [ ] Static verification: `rg -n "CrosshairSyncController|timestamp_ns|price|sync_crosshair|center" native`.
-- [ ] Commit with message: `实现C++多图十字线同步`.
+- [x] Emit crosshair updates as canonical timestamp/price.
+- [x] Convert incoming timestamp to each chart's local dense x.
+- [x] Skip disabled source charts and avoid feedback loops.
+- [x] Add center-time sync and optional Y-center sync.
+- [x] Static verification: `rg -n "CrosshairSyncController|timestamp_ns|price|sync_crosshair|center" native`.
+- [x] Commit with message: `实现C++多图十字线同步`.
 
 ### Task 10: Drawing Store and Fib Math
 
@@ -535,3 +535,26 @@
 - Static verification: `rg -n "ChartPanelWidget|Grid 2x2|Dual Vertical|setChartCount|setLayoutMode|period" native`.
 - No native exe was launched.
 - Next task: Task 9, crosshair and time sync.
+
+### 2026-04-26 Task 9 Completed
+
+- Added `CrosshairSyncController` as the sync module's concrete controller for registered chart callbacks, enabled-chart filtering, canonical timestamp/price fan-out, center-time sync, Y-center sync, and feedback-loop suppression.
+- Added dense timestamp interpolation in `ChartIndexMapper` and range-preserving center movement in `ChartInteractionController` so incoming timestamps can map into each chart's local dense x space.
+- Wired `ChartViewWidget` to emit local crosshair timestamp/price from mouse movement, accept synced crosshair state, center on synced timestamps, and store optional synced Y-center price.
+- Wired `ChartWorkspaceWidget` to register chart views with the sync controller and refresh enabled/disabled chart state from the workspace layout.
+- Added native tests for canonical crosshair fan-out, disabled source/target skipping, reentrant feedback-loop suppression, center sync, Y-center sync, timestamp-to-dense interpolation, and center-on-dense range preservation.
+- Verified RED first:
+  - OFF test build failed before implementation on missing `tradereview/sync/CrosshairSyncController.h`;
+  - OFF test build failed before dense/center helper implementation on missing `ChartIndexMapper::dense_x_from_timestamp` and `ChartInteractionController::center_on_dense_x`.
+- Verified with `C:\Build\TradeReview-native-task9-off-msvc` using DuckDB OFF:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task9-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Verified with `C:\Build\TradeReview-native-task9-msvc` using DuckDB ON:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task9-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Static verification: `rg -n "CrosshairSyncController|timestamp_ns|price|sync_crosshair|center" native --glob '!build/**'`.
+- `git diff --check` exited 0 with only LF-to-CRLF notices.
+- No native exe was launched.
+- Next task: Task 10, drawing store and Fib math.

@@ -16,6 +16,7 @@ public:
     std::size_t row_count() const;
 
     int nearest_dense_x(std::int64_t timestamp_ns) const;
+    double dense_x_from_timestamp(std::int64_t timestamp_ns) const;
     std::int64_t timestamp_at_dense_x(int dense_x) const;
     std::int64_t timestamp_from_x(double x) const;
 

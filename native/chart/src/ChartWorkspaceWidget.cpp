@@ -10,6 +10,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 
@@ -61,6 +62,7 @@ bool ChartWorkspaceWidget::setChartCount(int count)
     if (!state_.set_chart_count(count)) {
         return false;
     }
+    refresh_sync_enabled_charts();
     rebuild_layout();
     return true;
 }
@@ -185,6 +187,24 @@ ChartLayoutMode ChartWorkspaceWidget::layout_mode() const
     return state_.layout_mode();
 }
 
+bool ChartWorkspaceWidget::syncCrosshairFrom(std::uint64_t source_chart_id, std::int64_t timestamp_ns, double price)
+{
+    return crosshair_sync_controller_.sync_crosshair_from(source_chart_id, timestamp_ns, price);
+}
+
+bool ChartWorkspaceWidget::syncCenterFrom(
+    std::uint64_t source_chart_id,
+    std::int64_t timestamp_ns,
+    std::optional<double> price)
+{
+    return crosshair_sync_controller_.sync_center_from(source_chart_id, timestamp_ns, price);
+}
+
+bool ChartWorkspaceWidget::syncYCenterFrom(std::uint64_t source_chart_id, double price)
+{
+    return crosshair_sync_controller_.sync_y_center_from(source_chart_id, price);
+}
+
 void ChartWorkspaceWidget::rebuild_layout()
 {
     reset_content_widget();
@@ -287,6 +307,7 @@ void ChartWorkspaceWidget::reset_content_widget()
 
 void ChartWorkspaceWidget::connect_panel(ChartPanelWidget& panel_widget)
 {
+    const auto chart_id = panel_widget.chart_id();
     panel_widget.setReloadRequestCallback([this](std::uint64_t chart_id, core::TimeRange range) {
         if (reload_request_callback_) {
             reload_request_callback_(chart_id, range);
@@ -295,6 +316,34 @@ void ChartWorkspaceWidget::connect_panel(ChartPanelWidget& panel_widget)
     panel_widget.setPeriodChangedCallback([this](std::uint64_t chart_id, const std::string& period) {
         state_.set_chart_period(chart_id, period);
     });
+    panel_widget.chart_view().set_crosshair_moved_callback([this, chart_id](std::int64_t timestamp_ns, double price) {
+        crosshair_sync_controller_.sync_crosshair_from(chart_id, timestamp_ns, price);
+    });
+
+    crosshair_sync_controller_.register_chart(
+        chart_id,
+        [&panel_widget](std::int64_t timestamp_ns) {
+            return panel_widget.chart_view().dense_x_for_timestamp(timestamp_ns);
+        },
+        [&panel_widget](const sync::CrosshairUpdate& update) {
+            panel_widget.chart_view().sync_crosshair(update.timestamp_ns, update.price, update.dense_x);
+        },
+        [&panel_widget](const sync::CenterTimeUpdate& update) {
+            panel_widget.chart_view().sync_center_on_timestamp(update.timestamp_ns, update.price);
+        },
+        [&panel_widget](const sync::YCenterUpdate& update) {
+            panel_widget.chart_view().sync_y_center(update.price);
+        });
+}
+
+void ChartWorkspaceWidget::refresh_sync_enabled_charts()
+{
+    const auto enabled_ids = state_.enabled_chart_ids();
+    const auto registered_ids = crosshair_sync_controller_.registered_chart_ids();
+    for (const auto chart_id : registered_ids) {
+        const auto enabled = std::find(enabled_ids.begin(), enabled_ids.end(), chart_id) != enabled_ids.end();
+        crosshair_sync_controller_.set_chart_enabled(chart_id, enabled);
+    }
 }
 
 } // namespace tradereview::chart

@@ -26,6 +26,7 @@ public:
     void reset_for_row_count(std::size_t row_count);
     void reset_for_visible_time_range(const ChartIndexMapper& mapper, core::TimeRange visible_range);
     void set_visible_dense_range(DenseRange range);
+    bool center_on_dense_x(double dense_x);
     void pan_by_pixels(double pixel_delta_x, int viewport_width);
     void zoom_at_pixel(double pixel_x, int viewport_width, double scale_factor);
 
