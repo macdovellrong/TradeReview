@@ -6,6 +6,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLContext>
+#include <QPainter>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -134,6 +135,20 @@ bool ChartViewWidget::apply_window(data::CandleWindow window)
     has_last_reload_request_ = false;
     update();
     return true;
+}
+
+bool ChartViewWidget::set_loading(bool loading)
+{
+    const auto changed = scene_model_.set_loading(loading);
+    if (changed) {
+        update();
+    }
+    return changed;
+}
+
+bool ChartViewWidget::loading() const
+{
+    return scene_model_.loading();
 }
 
 bool ChartViewWidget::set_indicator_enabled(const std::string& indicator_name, bool enabled)
@@ -357,6 +372,14 @@ void ChartViewWidget::resizeGL(int width, int height)
 void ChartViewWidget::paintGL()
 {
     renderer_.render(scene_model_, drawing_state_.drawings(), drawing_state_.preview(), drawing_state_.revision());
+    if (!scene_model_.loading()) {
+        return;
+    }
+
+    QPainter painter(this);
+    painter.fillRect(rect(), QColor(15, 18, 24, 96));
+    painter.setPen(QColor(235, 238, 245));
+    painter.drawText(rect(), Qt::AlignCenter, "Loading...");
 }
 
 void ChartViewWidget::mousePressEvent(QMouseEvent* event)

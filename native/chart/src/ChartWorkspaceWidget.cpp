@@ -88,6 +88,15 @@ bool ChartWorkspaceWidget::setRequestedPeriod(std::uint64_t chart_id, std::strin
     return changed;
 }
 
+bool ChartWorkspaceWidget::setChartLoading(std::uint64_t chart_id, bool loading)
+{
+    auto* target_panel = panel(chart_id);
+    if (target_panel == nullptr) {
+        return false;
+    }
+    return target_panel->set_loading(loading);
+}
+
 bool ChartWorkspaceWidget::apply_window(data::CandleWindow window)
 {
     if (!state_.chart_enabled(window.chart_id)) {

@@ -1,6 +1,7 @@
 #include "tradereview/app/MainWindow.h"
 
 #include "tradereview/app/DataLoadController.h"
+#include "tradereview/app/ErrorPresenter.h"
 #include "tradereview/app/MainControlsBar.h"
 #include "tradereview/app/SessionState.h"
 #include "tradereview/app/TimeNavigation.h"
@@ -127,11 +128,14 @@ MainWindow::MainWindow(QWidget* parent)
 
     auto* mainControls = new MainControlsBar(central);
     auto* chartWorkspace = new chart::ChartWorkspaceWidget(central);
-    auto showPlaceholderStatus = [this](const QString& message) {
+    auto showStatus = [this](const QString& message) {
         statusBar()->showMessage(message);
     };
-    mainControls->setStatusCallback(showPlaceholderStatus);
-    chartWorkspace->setStatusCallback(showPlaceholderStatus);
+    mainControls->setStatusCallback(showStatus);
+    chartWorkspace->setStatusCallback(showStatus);
+    data_load_controller_->set_error_callback([this](data::DataError error) {
+        present_error(this, statusBar(), "Window load", error, false);
+    });
     chartWorkspace->setReloadRequestCallback([this, chartWorkspace](std::uint64_t chart_id, core::TimeRange range) {
         try {
             const auto status = data_load_controller_->request_window_async(
@@ -144,7 +148,7 @@ MainWindow::MainWindow(QWidget* parent)
                 });
             statusBar()->showMessage(pendingMessage(status));
         } catch (const std::exception& error) {
-            statusBar()->showMessage(QString("Window reload failed: ") + error.what());
+            present_error(this, statusBar(), "Window reload", error, false);
         }
     });
     mainControls->setLayoutModeCallback([this, chartWorkspace](const QString& mode) {
@@ -168,7 +172,7 @@ MainWindow::MainWindow(QWidget* parent)
             mainControls->setDateTimeValue(center);
             statusBar()->showMessage(pendingMessage(status));
         } catch (const std::exception& error) {
-            statusBar()->showMessage(QString("Reset View failed: ") + error.what());
+            present_error(this, statusBar(), "Reset View", error);
         }
     });
     mainControls->setSaveViewCallback([this, chartWorkspace]() {
@@ -189,7 +193,7 @@ MainWindow::MainWindow(QWidget* parent)
             save_session_state(settings_, state);
             statusBar()->showMessage("View saved");
         } catch (const std::exception& error) {
-            statusBar()->showMessage(QString("Save View failed: ") + error.what());
+            present_error(this, statusBar(), "Save View", error);
         }
     });
     mainControls->setDateTimeJumpCallback([this, chartWorkspace, mainControls](std::int64_t timestamp_ns) {
@@ -209,7 +213,7 @@ MainWindow::MainWindow(QWidget* parent)
             mainControls->setDateTimeValue(target);
             statusBar()->showMessage(pendingMessage(status));
         } catch (const std::exception& error) {
-            statusBar()->showMessage(QString("Date jump failed: ") + error.what());
+            present_error(this, statusBar(), "Date jump", error);
         }
     });
     mainControls->setReplayModeCallback([this, chartWorkspace, mainControls](bool enabled) {
@@ -221,7 +225,7 @@ MainWindow::MainWindow(QWidget* parent)
         } catch (const std::exception& error) {
             mainControls->setReplayControlsEnabled(false);
             mainControls->setReplayPlaying(false);
-            statusBar()->showMessage(QString("Replay Mode failed: ") + error.what());
+            present_error(this, statusBar(), "Replay Mode", error, false);
         }
     });
     mainControls->setReplayPlayCallback([this, mainControls]() {
@@ -231,7 +235,7 @@ MainWindow::MainWindow(QWidget* parent)
             statusBar()->showMessage(playing ? "Replay playing" : "Replay paused");
         } catch (const std::exception& error) {
             mainControls->setReplayPlaying(false);
-            statusBar()->showMessage(QString("Replay play failed: ") + error.what());
+            present_error(this, statusBar(), "Replay play", error, false);
         }
     });
     mainControls->setReplayStepCallback([this, chartWorkspace, mainControls](std::int64_t delta_ns) {
@@ -258,7 +262,7 @@ MainWindow::MainWindow(QWidget* parent)
             statusBar()->showMessage(pendingMessage(status));
         } catch (const std::exception& error) {
             mainControls->setReplayPlaying(false);
-            statusBar()->showMessage(QString("Step failed: ") + error.what());
+            present_error(this, statusBar(), "Step", error, false);
         }
     });
     mainControls->setReplaySpeedCallback([this](int speed) {
@@ -286,7 +290,7 @@ MainWindow::MainWindow(QWidget* parent)
             mainControls->setDateTimeValue(midpoint(info.tick_range));
             statusBar()->showMessage(pendingMessage(status));
         } catch (const std::exception& error) {
-            statusBar()->showMessage(QString("Load Data failed: ") + error.what());
+            present_error(this, statusBar(), "Load Data", error);
         }
     });
 
@@ -308,7 +312,7 @@ MainWindow::MainWindow(QWidget* parent)
             }
         } catch (const std::exception& error) {
             mainControls->setReplayPlaying(false);
-            statusBar()->showMessage(QString("Replay timer failed: ") + error.what());
+            present_error(this, statusBar(), "Replay timer", error, false);
         }
     });
     replayTimer->start(100);
@@ -356,7 +360,7 @@ MainWindow::MainWindow(QWidget* parent)
                 });
             statusBar()->showMessage(pendingMessage(status));
         } catch (const std::exception& error) {
-            statusBar()->showMessage(QString("Restore View failed: ") + error.what());
+            present_error(this, statusBar(), "Restore View", error, false);
         }
     });
 

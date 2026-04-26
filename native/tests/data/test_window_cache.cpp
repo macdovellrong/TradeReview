@@ -2,6 +2,7 @@
 #include "tradereview/data/WindowCache.h"
 
 #include "tradereview/core/Assertions.h"
+#include "tradereview/data/DataError.h"
 #include "tradereview/data/IDataStore.h"
 
 #include <QCoreApplication>
@@ -13,6 +14,8 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -99,6 +102,10 @@ public:
         if (delay_ms_ > 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
         }
+        if (failing_chart_id.has_value() && request.chart_id == *failing_chart_id) {
+            --active_queries;
+            throw std::runtime_error("simulated query failure");
+        }
         auto window = window_for_generation(request.generation, request.visible_range.start_ns);
         window.chart_id = request.chart_id;
         window.requested_period = request.requested_period;
@@ -123,6 +130,7 @@ public:
     std::atomic<int> active_queries = 0;
     std::atomic<int> open_count = 0;
     std::atomic<int> overlapped_open_count = 0;
+    std::optional<std::uint64_t> failing_chart_id;
 
 private:
     int delay_ms_ = 0;
@@ -369,6 +377,33 @@ void test_data_scheduler_drops_stale_generation_results()
     tradereview::core::assert_equal(store->query_count.load(), 1, "stale request still queried once");
 }
 
+void test_data_scheduler_delivers_query_error_and_keeps_other_windows_usable()
+{
+    auto store = std::make_shared<FakeStore>();
+    store->failing_chart_id = 2;
+    tradereview::data::DataScheduler scheduler(store, 4);
+    const auto success_request = scheduled_request(1, 1, 0, 100);
+    const auto failing_request = scheduled_request(2, 1, 0, 100);
+    std::atomic<int> successes = 0;
+    std::atomic<int> errors = 0;
+
+    scheduler.submit_window(success_request, nullptr, [&successes](tradereview::data::ScheduledWindowResult result) {
+        if (!result.error.has_value()) {
+            ++successes;
+        }
+    });
+    scheduler.submit_window(failing_request, nullptr, [&errors](tradereview::data::ScheduledWindowResult result) {
+        if (result.error.has_value() && result.error->code == tradereview::data::DataErrorCode::QueryFailed) {
+            ++errors;
+        }
+    });
+
+    tradereview::core::assert_true(wait_until_empty(scheduler), "scheduler drains mixed success and error requests");
+    tradereview::core::assert_true(wait_until_count(successes, 1), "successful chart still receives a window");
+    tradereview::core::assert_true(wait_until_count(errors, 1), "failing chart receives a query error");
+    tradereview::core::assert_equal(store->query_count.load(), 2, "both chart queries ran");
+}
+
 struct RegisterWindowCacheTests {
     RegisterWindowCacheTests()
     {
@@ -399,6 +434,9 @@ struct RegisterWindowCacheTests {
         tradereview::tests::register_test(
             "data scheduler drops stale generation results",
             test_data_scheduler_drops_stale_generation_results);
+        tradereview::tests::register_test(
+            "data scheduler delivers query error and keeps other windows usable",
+            test_data_scheduler_delivers_query_error_and_keeps_other_windows_usable);
     }
 };
 

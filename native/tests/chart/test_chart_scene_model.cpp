@@ -100,6 +100,20 @@ void test_scene_model_rejects_inconsistent_columns()
     tradereview::core::assert_equal(model.row_count(), std::size_t{0}, "scene model row count remains empty");
 }
 
+void test_scene_model_tracks_loading_state()
+{
+    tradereview::chart::ChartSceneModel model;
+
+    tradereview::core::assert_true(!model.loading(), "model starts not loading");
+    const auto initial_revision = model.revision();
+    tradereview::core::assert_true(model.set_loading(true), "loading can be enabled");
+    tradereview::core::assert_true(model.loading(), "loading flag is true");
+    tradereview::core::assert_equal(model.revision(), initial_revision + 1, "loading change increments revision");
+    tradereview::core::assert_true(!model.set_loading(true), "same loading state is ignored");
+    tradereview::core::assert_true(model.set_loading(false), "loading can be disabled");
+    tradereview::core::assert_true(!model.loading(), "loading flag is false");
+}
+
 bool contains(const std::vector<std::string>& values, std::string_view target)
 {
     for (const auto& value : values) {
@@ -152,6 +166,9 @@ struct RegisterChartSceneModelTests {
         tradereview::tests::register_test(
             "scene model rejects inconsistent columns",
             test_scene_model_rejects_inconsistent_columns);
+        tradereview::tests::register_test(
+            "scene model tracks loading state",
+            test_scene_model_tracks_loading_state);
         tradereview::tests::register_test(
             "scene model tracks indicator visibility and requested columns",
             test_scene_model_tracks_indicator_visibility_and_requested_columns);

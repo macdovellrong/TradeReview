@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tradereview/data/CandleWindow.h"
+#include "tradereview/data/DataError.h"
 #include "tradereview/data/IDataStore.h"
 
 #include <cstddef>
@@ -8,6 +9,7 @@
 #include <functional>
 #include <iosfwd>
 #include <memory>
+#include <optional>
 #include <string>
 
 class QObject;
@@ -24,6 +26,7 @@ struct ScheduledWindowResult {
     ScheduledWindowRequest request;
     CandleWindow window;
     bool from_cache = false;
+    std::optional<DataError> error;
 };
 
 enum class ScheduleSubmitStatus {

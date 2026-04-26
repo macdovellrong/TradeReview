@@ -60,6 +60,17 @@ bool ChartSceneModel::apply_window(data::CandleWindow window)
 
     index_mapper_.set_timestamps(window.timestamp_ns);
     window_ = std::move(window);
+    loading_ = false;
+    ++revision_;
+    return true;
+}
+
+bool ChartSceneModel::set_loading(bool loading)
+{
+    if (loading_ == loading) {
+        return false;
+    }
+    loading_ = loading;
     ++revision_;
     return true;
 }
@@ -81,6 +92,11 @@ bool ChartSceneModel::set_visible_dense_range(DenseRange range)
 std::size_t ChartSceneModel::row_count() const
 {
     return window_.row_count();
+}
+
+bool ChartSceneModel::loading() const
+{
+    return loading_;
 }
 
 const data::CandleWindow& ChartSceneModel::window() const

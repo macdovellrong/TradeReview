@@ -345,6 +345,11 @@ std::int64_t DataLoadController::current_view_center_time_ns(const chart::ChartW
     return normalize_jump_timestamp_ns(midpoint(dataset_info_.tick_range));
 }
 
+void DataLoadController::set_error_callback(ErrorCallback callback)
+{
+    error_callback_ = std::move(callback);
+}
+
 void DataLoadController::set_replay_enabled(bool enabled, chart::ChartWorkspaceWidget& workspace)
 {
     if (dataset_path_.empty()) {
@@ -409,6 +414,9 @@ data::ScheduleSubmitStatus DataLoadController::submit_window_async(
     QObject* receiver,
     LoadCallback callback)
 {
+    const auto chart_id = request.chart_id;
+    workspace.setChartLoading(chart_id, true);
+
     data::ScheduledWindowRequest scheduled_request;
     scheduled_request.dataset_path = dataset_path_;
     scheduled_request.indicator_version = dataset_info_.indicator_version;
@@ -416,10 +424,22 @@ data::ScheduleSubmitStatus DataLoadController::submit_window_async(
 
     auto dataset_info = dataset_info_;
     auto* workspace_ptr = &workspace;
+    auto error_callback = error_callback_;
     return scheduler_->submit_window(
         std::move(scheduled_request),
         receiver,
-        [dataset_info = std::move(dataset_info), workspace_ptr, callback = std::move(callback)](data::ScheduledWindowResult result) mutable {
+        [dataset_info = std::move(dataset_info),
+            workspace_ptr,
+            callback = std::move(callback),
+            error_callback = std::move(error_callback)](data::ScheduledWindowResult result) mutable {
+            workspace_ptr->setChartLoading(result.request.candle_request.chart_id, false);
+            if (result.error.has_value()) {
+                if (error_callback) {
+                    error_callback(std::move(*result.error));
+                }
+                return;
+            }
+
             result.window.from_cache = result.from_cache;
             LoadResult load_result{dataset_info, std::move(result.window)};
             const auto accepted = workspace_ptr->apply_window(data::CandleWindow{load_result.window});

@@ -137,6 +137,24 @@ void post_result(
         Qt::QueuedConnection);
 }
 
+DataError data_error_from_exception(const std::exception& error, const ScheduledWindowRequest& request)
+{
+    if (const auto* data_exception = dynamic_cast<const DataException*>(&error); data_exception != nullptr) {
+        auto data_error = data_exception->error();
+        if (data_error.path.empty()) {
+            data_error.path = request.dataset_path;
+        }
+        return data_error;
+    }
+
+    return DataError{
+        DataErrorCode::QueryFailed,
+        error.what(),
+        request.dataset_path,
+        {},
+    };
+}
+
 } // namespace
 
 struct DataScheduler::State : std::enable_shared_from_this<DataScheduler::State> {
@@ -213,12 +231,12 @@ struct DataScheduler::State : std::enable_shared_from_this<DataScheduler::State>
         }
 
         CandleWindow window;
-        bool query_ok = true;
+        std::optional<DataError> query_error;
         try {
             std::lock_guard store_lock(store_mutex);
             window = store->query_candles(item.request.candle_request);
-        } catch (const std::exception&) {
-            query_ok = false;
+        } catch (const std::exception& error) {
+            query_error = data_error_from_exception(error, item.request);
         }
 
         bool stale = true;
@@ -233,12 +251,26 @@ struct DataScheduler::State : std::enable_shared_from_this<DataScheduler::State>
             stale = current_generation == current_generation_by_chart.end() ||
                 current_generation->second != item.request.candle_request.generation;
 
-            if (query_ok && !stale) {
+            if (!query_error.has_value() && !stale) {
                 cache.put(item.cache_key, window);
             }
         }
 
-        if (!query_ok || stale) {
+        if (stale) {
+            return;
+        }
+
+        if (query_error.has_value()) {
+            ScheduledWindowResult result{item.request, {}, false, std::move(query_error)};
+            const auto chart_id = item.request.candle_request.chart_id;
+            const auto generation = item.request.candle_request.generation;
+            post_result(
+                item.target,
+                std::move(item.callback),
+                std::move(result),
+                [self = shared_from_this(), chart_id, generation]() {
+                    return self->is_current_generation(chart_id, generation);
+                });
             return;
         }
 

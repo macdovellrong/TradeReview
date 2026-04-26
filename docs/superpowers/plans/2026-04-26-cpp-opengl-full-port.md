@@ -354,12 +354,12 @@
 - Create: `native/app/include/tradereview/app/ErrorPresenter.h`
 - Create: `native/app/src/ErrorPresenter.cpp`
 
-- [ ] Present file/schema/query errors with clear messages.
-- [ ] Show lightweight chart loading state during async window requests.
-- [ ] Silently discard stale generation results.
-- [ ] Keep UI usable when one chart fails to load.
-- [ ] Static verification: `rg -n "ErrorPresenter|loading|stale|DataError|QMessageBox" native`.
-- [ ] Commit with message: `完善C++错误提示和加载状态`.
+- [x] Present file/schema/query errors with clear messages.
+- [x] Show lightweight chart loading state during async window requests.
+- [x] Silently discard stale generation results.
+- [x] Keep UI usable when one chart fails to load.
+- [x] Static verification: `rg -n "ErrorPresenter|loading|stale|DataError|QMessageBox" native`.
+- [x] Commit with message: `完善C++错误提示和加载状态`.
 
 ### Task 15: Verification Checklist and Manual Build Notes
 
@@ -653,3 +653,25 @@
 - `git diff --check` exited 0 with only LF-to-CRLF notices.
 - No native exe was launched.
 - Next task: Task 14, error handling and product polish.
+
+### 2026-04-26 Task 14 Completed
+
+- Added `ErrorPresenter` to build clear status/dialog messages for data errors and standard exceptions, and wired `MainWindow` catches through it.
+- Extended `DataError` with `DataException`, converted DuckDB open/schema/query failures into explicit `DataErrorCode` values, and preserved path/table context where available.
+- Extended `DataScheduler` so per-chart query failures are delivered as error results instead of being swallowed, while stale generations are still discarded before callback delivery.
+- Added chart loading state through `ChartSceneModel`, `ChartViewWidget`, `ChartPanelWidget`, and `ChartWorkspaceWidget`; async requests mark a chart loading and clear it on success or error.
+- Kept multi-chart UI usable on partial failure: one chart can receive a query error while other chart windows still apply normally.
+- Added native tests for contextual error formatting, chart loading state revision behavior, and scheduler partial-failure delivery.
+- Verified RED first:
+  - OFF test build failed before implementation on missing `tradereview/app/ErrorPresenter.h`;
+  - OFF test build failed before implementation on missing `ScheduledWindowResult::error`.
+- Verified with `C:\Build\TradeReview-native-task11-off-msvc` using DuckDB OFF:
+  - full Debug build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task11-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Verified with `C:\Build\TradeReview-native-task11-on-msvc` using DuckDB ON:
+  - full Debug build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task11-on-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Static verification: `rg -n "ErrorPresenter|loading|stale|DataError|QMessageBox" native --glob '!native/build/**' --glob '!native-build*/**'`.
+- `git diff --check` exited 0 with only LF-to-CRLF notices.
+- No native exe was launched.
+- Next task: Task 15, verification checklist and manual build notes.

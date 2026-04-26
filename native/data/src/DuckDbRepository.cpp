@@ -1,10 +1,12 @@
 #include "tradereview/data/DuckDbRepository.h"
 
+#include "tradereview/data/DataError.h"
 #include "tradereview/data/DuckDbSchema.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <filesystem>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -22,8 +24,26 @@ namespace {
 
 [[noreturn]] void throw_duckdb_unavailable()
 {
-    throw std::runtime_error(
-        "DuckDB repository is unavailable because TRADEREVIEW_NATIVE_WITH_DUCKDB is OFF");
+    throw DataException(DataError{
+        DataErrorCode::OpenFailed,
+        "DuckDB repository is unavailable because TRADEREVIEW_NATIVE_WITH_DUCKDB is OFF",
+        {},
+        {},
+    });
+}
+
+[[nodiscard]] DataError make_data_error(
+    DataErrorCode code,
+    std::string message,
+    std::string path = {},
+    std::string table = {})
+{
+    return DataError{
+        code,
+        std::move(message),
+        std::move(path),
+        std::move(table),
+    };
 }
 
 #if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
@@ -146,7 +166,11 @@ private:
             return column.name;
         }
     }
-    throw std::runtime_error("DuckDB table is missing a timestamp column: " + schema.name);
+    throw DataException(make_data_error(
+        DataErrorCode::MissingColumn,
+        "DuckDB table is missing a timestamp column: " + schema.name,
+        {},
+        schema.name));
 }
 
 void throw_if_schema_invalid(const SchemaValidationResult& result, std::string_view label)
@@ -166,7 +190,24 @@ void throw_if_schema_invalid(const SchemaValidationResult& result, std::string_v
             message << ' ' << column;
         }
     }
-    throw std::runtime_error(message.str());
+    auto code = result.error.code;
+    if (code == DataErrorCode::None) {
+        code = DataErrorCode::SchemaMismatch;
+    }
+    throw DataException(make_data_error(code, message.str(), {}, result.error.table));
+}
+
+void throw_if_table_missing(const TableSchema& schema)
+{
+    if (!schema.columns.empty()) {
+        return;
+    }
+
+    throw DataException(make_data_error(
+        DataErrorCode::MissingTable,
+        "DuckDB table is missing: " + schema.name,
+        {},
+        schema.name));
 }
 #endif
 
@@ -190,11 +231,17 @@ public:
     {
         QueryResult result;
         if (connection_ == nullptr) {
-            throw std::runtime_error("DuckDB database is not open");
+            throw DataException(make_data_error(
+                DataErrorCode::InvalidRequest,
+                "DuckDB database is not open",
+                current_path_));
         }
         if (duckdb_query(connection_, sql.c_str(), result.get()) == DuckDBError) {
             const std::string error = duckdb_result_error(result.get());
-            throw std::runtime_error("DuckDB query failed: " + error);
+            throw DataException(make_data_error(
+                DataErrorCode::QueryFailed,
+                "DuckDB query failed: " + error,
+                current_path_));
         }
         return result;
     }
@@ -235,26 +282,46 @@ public:
         std::lock_guard lock(mutex_);
 #if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
         close();
+        current_path_ = path;
+
+        if (path.empty() || !std::filesystem::exists(path)) {
+            throw DataException(make_data_error(
+                DataErrorCode::FileNotFound,
+                "DuckDB database file was not found",
+                path));
+        }
 
         duckdb_config config = nullptr;
         const auto config_result = duckdb_create_config(&config);
         if (config_result == DuckDBError) {
-            throw std::runtime_error("failed to create DuckDB config");
+            throw DataException(make_data_error(
+                DataErrorCode::OpenFailed,
+                "failed to create DuckDB config",
+                path));
         }
         const auto readonly_result = duckdb_set_config(config, "access_mode", "READ_ONLY");
         if (readonly_result == DuckDBError) {
             duckdb_destroy_config(&config);
-            throw std::runtime_error("failed to set DuckDB read-only access mode");
+            throw DataException(make_data_error(
+                DataErrorCode::OpenFailed,
+                "failed to set DuckDB read-only access mode",
+                path));
         }
         const auto open_result = duckdb_open_ext(path.c_str(), &database_, config, nullptr);
         duckdb_destroy_config(&config);
         if (open_result == DuckDBError) {
-            throw std::runtime_error("failed to open DuckDB database read-only");
+            throw DataException(make_data_error(
+                DataErrorCode::OpenFailed,
+                "failed to open DuckDB database read-only",
+                path));
         }
         if (duckdb_connect(database_, &connection_) == DuckDBError) {
             duckdb_close(&database_);
             database_ = nullptr;
-            throw std::runtime_error("failed to connect DuckDB database");
+            throw DataException(make_data_error(
+                DataErrorCode::OpenFailed,
+                "failed to connect DuckDB database",
+                path));
         }
 
         DataSetInfo info;
@@ -275,6 +342,7 @@ public:
 #if defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
         const auto table_name = duckdb_candle_table_for_period(request.requested_period);
         const auto schema = table_schema(table_name);
+        throw_if_table_missing(schema);
         throw_if_schema_invalid(validate_candle_schema(schema, {}), "candle");
         const auto timestamp_name = timestamp_column(schema);
         const auto available_indicators = canonical_indicator_columns_present(schema);
@@ -353,6 +421,7 @@ public:
         }
 
         const auto schema = table_schema("ticks");
+        throw_if_table_missing(schema);
         throw_if_schema_invalid(validate_ticks_schema(schema), "ticks");
         const auto timestamp_name = timestamp_column(schema);
 
@@ -383,6 +452,7 @@ public:
         }
 
         const auto schema = table_schema("ticks");
+        throw_if_table_missing(schema);
         throw_if_schema_invalid(validate_ticks_schema(schema), "ticks");
         const auto timestamp_name = timestamp_column(schema);
 
@@ -431,6 +501,7 @@ private:
     bool has_tick_after(std::int64_t timestamp_ns)
     {
         const auto schema = table_schema("ticks");
+        throw_if_table_missing(schema);
         throw_if_schema_invalid(validate_ticks_schema(schema), "ticks");
         const auto timestamp_name = timestamp_column(schema);
 
@@ -443,6 +514,7 @@ private:
     void load_tick_metadata(DataSetInfo& info)
     {
         const auto schema = table_schema("ticks");
+        throw_if_table_missing(schema);
         throw_if_schema_invalid(validate_ticks_schema(schema), "ticks");
         const auto timestamp_name = quoted_identifier(timestamp_column(schema));
         auto result = query(
@@ -481,6 +553,7 @@ private:
 
     duckdb_database database_ = nullptr;
     duckdb_connection connection_ = nullptr;
+    std::string current_path_;
 #endif
 };
 

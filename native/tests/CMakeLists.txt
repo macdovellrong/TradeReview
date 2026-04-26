@@ -1,4 +1,5 @@
 add_executable(tradereview_native_tests
+    app/test_error_presenter.cpp
     app/test_session_state.cpp
     app/test_time_navigation.cpp
     chart/test_chart_index_mapper.cpp

@@ -1,8 +1,10 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGL OpenGLWidgets)
 
 add_library(tradereview_app_logic STATIC
+    include/tradereview/app/ErrorPresenter.h
     include/tradereview/app/SessionState.h
     include/tradereview/app/TimeNavigation.h
+    src/ErrorPresenter.cpp
     src/SessionState.cpp
     src/TimeNavigation.cpp
 )
@@ -15,6 +17,7 @@ target_include_directories(tradereview_app_logic
 target_link_libraries(tradereview_app_logic
     PUBLIC
         Qt6::Core
+        Qt6::Widgets
         tradereview_core
         tradereview_data
         tradereview_chart

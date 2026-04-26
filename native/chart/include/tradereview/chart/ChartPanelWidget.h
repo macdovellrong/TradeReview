@@ -28,6 +28,7 @@ public:
     void setStatusCallback(ChartToolbarWidget::StatusCallback callback);
     void setReloadRequestCallback(ReloadRequestCallback callback);
     void setPeriodChangedCallback(PeriodChangedCallback callback);
+    bool set_loading(bool loading);
     bool apply_window(data::CandleWindow window);
     [[nodiscard]] ChartViewWidget& chart_view();
     [[nodiscard]] const ChartViewWidget& chart_view() const;

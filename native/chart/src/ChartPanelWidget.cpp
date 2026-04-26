@@ -90,6 +90,11 @@ void ChartPanelWidget::setPeriodChangedCallback(PeriodChangedCallback callback)
     period_changed_callback_ = std::move(callback);
 }
 
+bool ChartPanelWidget::set_loading(bool loading)
+{
+    return chart_view_->set_loading(loading);
+}
+
 bool ChartPanelWidget::apply_window(data::CandleWindow window)
 {
     if (window.chart_id != chart_id_) {

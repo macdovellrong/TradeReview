@@ -2,6 +2,7 @@
 
 #include "tradereview/core/TimeRange.h"
 #include "tradereview/data/CandleWindow.h"
+#include "tradereview/data/DataError.h"
 #include "tradereview/data/DataScheduler.h"
 #include "tradereview/data/DataSetInfo.h"
 #include "tradereview/replay/ReplaySession.h"
@@ -43,6 +44,7 @@ struct ReplayUpdateResult {
 class DataLoadController final {
 public:
     using LoadCallback = std::function<void(LoadResult)>;
+    using ErrorCallback = std::function<void(data::DataError)>;
 
     DataLoadController();
     explicit DataLoadController(std::unique_ptr<data::IDataStore> store);
@@ -88,6 +90,7 @@ public:
     [[nodiscard]] const data::DataSetInfo& dataset_info() const;
     [[nodiscard]] const std::string& dataset_path() const;
     [[nodiscard]] std::int64_t current_view_center_time_ns(const chart::ChartWorkspaceWidget& workspace) const;
+    void set_error_callback(ErrorCallback callback);
     void set_replay_enabled(bool enabled, chart::ChartWorkspaceWidget& workspace);
     [[nodiscard]] bool replay_enabled() const;
     [[nodiscard]] bool replay_playing() const;
@@ -116,6 +119,7 @@ private:
     std::shared_ptr<data::IDataStore> store_;
     std::unique_ptr<data::DataScheduler> scheduler_;
     std::unique_ptr<replay::ReplaySession> replay_session_;
+    ErrorCallback error_callback_;
     data::DataSetInfo dataset_info_;
     std::string dataset_path_;
     std::string requested_period_ = "1min";

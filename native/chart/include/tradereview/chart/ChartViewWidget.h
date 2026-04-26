@@ -40,6 +40,8 @@ public:
 
     std::uint64_t bump_generation();
     bool apply_window(data::CandleWindow window);
+    bool set_loading(bool loading);
+    [[nodiscard]] bool loading() const;
     bool set_indicator_enabled(const std::string& indicator_name, bool enabled);
     bool set_bollinger_bands_enabled(bool enabled);
     bool set_indicator_panels_enabled(bool enabled);
