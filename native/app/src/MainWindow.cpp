@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <exception>
+#include <memory>
 
 namespace tradereview::app {
 namespace {
@@ -35,10 +36,32 @@ QString loadedMessage(const QString& path, const LoadResult& result)
         .arg(formatTimestamp(result.window.visible_range.end_ns));
 }
 
+QString windowMessage(const LoadResult& result)
+{
+    return QString("Loaded %1 rows (%2 to %3)")
+        .arg(static_cast<qulonglong>(result.window.row_count()))
+        .arg(formatTimestamp(result.window.visible_range.start_ns))
+        .arg(formatTimestamp(result.window.visible_range.end_ns));
+}
+
+QString pendingMessage(data::ScheduleSubmitStatus status)
+{
+    switch (status) {
+    case data::ScheduleSubmitStatus::Scheduled:
+        return "Loading window...";
+    case data::ScheduleSubmitStatus::Coalesced:
+        return "Window load already pending";
+    case data::ScheduleSubmitStatus::CacheHit:
+        return "Loading cached window...";
+    }
+    return "Loading window...";
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
+    , data_load_controller_(std::make_unique<DataLoadController>())
 {
     setWindowTitle("TradeReview Native");
     resize(1400, 950);
@@ -57,10 +80,19 @@ MainWindow::MainWindow(QWidget* parent)
     };
     mainControls->setStatusCallback(showPlaceholderStatus);
     chartWorkspace->setStatusCallback(showPlaceholderStatus);
-    chartWorkspace->chart_view().set_reload_request_callback([showPlaceholderStatus](core::TimeRange range) {
-        showPlaceholderStatus(QString("Window reload requested (%1 to %2)")
-            .arg(formatTimestamp(range.start_ns))
-            .arg(formatTimestamp(range.end_ns)));
+    chartWorkspace->chart_view().set_reload_request_callback([this, chartWorkspace](core::TimeRange range) {
+        try {
+            const auto status = data_load_controller_->request_window_async(
+                range,
+                *chartWorkspace,
+                this,
+                [this](LoadResult result) {
+                    statusBar()->showMessage(windowMessage(result));
+                });
+            statusBar()->showMessage(pendingMessage(status));
+        } catch (const std::exception& error) {
+            statusBar()->showMessage(QString("Window reload failed: ") + error.what());
+        }
     });
     mainControls->setLoadDataCallback([this, chartWorkspace]() {
         const auto path = QFileDialog::getOpenFileName(this, "Load DuckDB Data", QString(), "DuckDB (*.duckdb)");
@@ -69,9 +101,14 @@ MainWindow::MainWindow(QWidget* parent)
         }
 
         try {
-            DataLoadController controller;
-            const auto result = controller.load_file(path, *chartWorkspace);
-            statusBar()->showMessage(loadedMessage(path, result));
+            const auto status = data_load_controller_->load_file_async(
+                path,
+                *chartWorkspace,
+                this,
+                [this, path](LoadResult result) {
+                    statusBar()->showMessage(loadedMessage(path, result));
+                });
+            statusBar()->showMessage(pendingMessage(status));
         } catch (const std::exception& error) {
             statusBar()->showMessage(QString("Load Data failed: ") + error.what());
         }

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <QObject>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -58,15 +59,58 @@ int chartPixelWidth(const chart::ChartWorkspaceWidget& workspace)
     return std::max(workspace.chart_view().width(), kDefaultPixelWidth);
 }
 
+std::string datasetPathForRequest(const std::string& opened_path, const data::DataSetInfo& dataset_info)
+{
+    if (!dataset_info.dataset_path.empty()) {
+        return dataset_info.dataset_path;
+    }
+    return opened_path;
+}
+
+std::string requestedPeriod(const data::DataSetInfo& dataset_info)
+{
+    const auto one_minute = std::find(
+        dataset_info.available_periods.begin(),
+        dataset_info.available_periods.end(),
+        "1min");
+    if (one_minute != dataset_info.available_periods.end()) {
+        return *one_minute;
+    }
+    if (!dataset_info.available_periods.empty()) {
+        return dataset_info.available_periods.front();
+    }
+    return "1min";
+}
+
+data::CandleWindowRequest makeWindowRequest(
+    chart::ChartWorkspaceWidget& workspace,
+    core::TimeRange visible_range,
+    const std::string& requested_period)
+{
+    data::CandleWindowRequest request;
+    request.chart_id = 1;
+    request.generation = workspace.chart_view().bump_generation();
+    request.requested_period = requested_period;
+    request.visible_range = visible_range;
+    request.pixel_width = chartPixelWidth(workspace);
+    return request;
+}
+
 } // namespace
 
 DataLoadController::DataLoadController()
-    : DataLoadController(std::make_unique<data::DuckDbRepository>())
+    : DataLoadController(std::unique_ptr<data::IDataStore>(std::make_unique<data::DuckDbRepository>()))
 {
 }
 
 DataLoadController::DataLoadController(std::unique_ptr<data::IDataStore> store)
+    : DataLoadController(std::shared_ptr<data::IDataStore>(std::move(store)))
+{
+}
+
+DataLoadController::DataLoadController(std::shared_ptr<data::IDataStore> store)
     : store_(std::move(store))
+    , scheduler_(std::make_unique<data::DataScheduler>(store_))
 {
     if (!store_) {
         throw std::invalid_argument("DataLoadController requires an IDataStore");
@@ -79,20 +123,66 @@ DataLoadController::DataLoadController(DataLoadController&&) noexcept = default;
 
 DataLoadController& DataLoadController::operator=(DataLoadController&&) noexcept = default;
 
-LoadResult DataLoadController::load_file(const QString& path, chart::ChartWorkspaceWidget& workspace)
+data::ScheduleSubmitStatus DataLoadController::load_file_async(
+    const QString& path,
+    chart::ChartWorkspaceWidget& workspace,
+    QObject* receiver,
+    LoadCallback callback)
 {
-    const auto dataset_info = store_->open_readonly(toPathString(path));
-    data::CandleWindowRequest request;
-    request.chart_id = 1;
-    request.generation = workspace.chart_view().bump_generation();
-    request.requested_period = "1min";
-    request.visible_range = initialVisibleRange(dataset_info.tick_range);
-    request.pixel_width = chartPixelWidth(workspace);
+    if (receiver == nullptr) {
+        throw std::invalid_argument("load_file_async requires a QObject receiver");
+    }
 
-    auto window = store_->query_candles(request);
-    workspace.apply_window(data::CandleWindow{window});
+    const auto opened_path = toPathString(path);
+    dataset_info_ = scheduler_->open_readonly(opened_path);
+    dataset_path_ = datasetPathForRequest(opened_path, dataset_info_);
+    requested_period_ = requestedPeriod(dataset_info_);
 
-    return {dataset_info, std::move(window)};
+    auto request = makeWindowRequest(workspace, initialVisibleRange(dataset_info_.tick_range), requested_period_);
+    return submit_window_async(std::move(request), workspace, receiver, std::move(callback));
+}
+
+data::ScheduleSubmitStatus DataLoadController::request_window_async(
+    core::TimeRange visible_range,
+    chart::ChartWorkspaceWidget& workspace,
+    QObject* receiver,
+    LoadCallback callback)
+{
+    if (receiver == nullptr) {
+        throw std::invalid_argument("request_window_async requires a QObject receiver");
+    }
+    if (dataset_path_.empty()) {
+        throw std::runtime_error("no dataset loaded");
+    }
+
+    auto request = makeWindowRequest(workspace, visible_range, requested_period_);
+    return submit_window_async(std::move(request), workspace, receiver, std::move(callback));
+}
+
+data::ScheduleSubmitStatus DataLoadController::submit_window_async(
+    data::CandleWindowRequest request,
+    chart::ChartWorkspaceWidget& workspace,
+    QObject* receiver,
+    LoadCallback callback)
+{
+    data::ScheduledWindowRequest scheduled_request;
+    scheduled_request.dataset_path = dataset_path_;
+    scheduled_request.indicator_version = dataset_info_.indicator_version;
+    scheduled_request.candle_request = std::move(request);
+
+    auto dataset_info = dataset_info_;
+    auto* workspace_ptr = &workspace;
+    return scheduler_->submit_window(
+        std::move(scheduled_request),
+        receiver,
+        [dataset_info = std::move(dataset_info), workspace_ptr, callback = std::move(callback)](data::ScheduledWindowResult result) mutable {
+            result.window.from_cache = result.from_cache;
+            LoadResult load_result{dataset_info, std::move(result.window)};
+            const auto accepted = workspace_ptr->apply_window(data::CandleWindow{load_result.window});
+            if (accepted && callback) {
+                callback(std::move(load_result));
+            }
+        });
 }
 
 } // namespace tradereview::app

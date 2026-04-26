@@ -1,11 +1,17 @@
 #pragma once
 
+#include "tradereview/core/TimeRange.h"
 #include "tradereview/data/CandleWindow.h"
+#include "tradereview/data/DataScheduler.h"
 #include "tradereview/data/DataSetInfo.h"
 
 #include <QString>
 
+#include <functional>
 #include <memory>
+#include <string>
+
+class QObject;
 
 namespace tradereview::chart {
 class ChartWorkspaceWidget;
@@ -24,8 +30,11 @@ struct LoadResult {
 
 class DataLoadController final {
 public:
+    using LoadCallback = std::function<void(LoadResult)>;
+
     DataLoadController();
     explicit DataLoadController(std::unique_ptr<data::IDataStore> store);
+    explicit DataLoadController(std::shared_ptr<data::IDataStore> store);
     ~DataLoadController();
 
     DataLoadController(const DataLoadController&) = delete;
@@ -33,10 +42,29 @@ public:
     DataLoadController(DataLoadController&&) noexcept;
     DataLoadController& operator=(DataLoadController&&) noexcept;
 
-    LoadResult load_file(const QString& path, chart::ChartWorkspaceWidget& workspace);
+    data::ScheduleSubmitStatus load_file_async(
+        const QString& path,
+        chart::ChartWorkspaceWidget& workspace,
+        QObject* receiver,
+        LoadCallback callback);
+    data::ScheduleSubmitStatus request_window_async(
+        core::TimeRange visible_range,
+        chart::ChartWorkspaceWidget& workspace,
+        QObject* receiver,
+        LoadCallback callback);
 
 private:
-    std::unique_ptr<data::IDataStore> store_;
+    data::ScheduleSubmitStatus submit_window_async(
+        data::CandleWindowRequest request,
+        chart::ChartWorkspaceWidget& workspace,
+        QObject* receiver,
+        LoadCallback callback);
+
+    std::shared_ptr<data::IDataStore> store_;
+    std::unique_ptr<data::DataScheduler> scheduler_;
+    data::DataSetInfo dataset_info_;
+    std::string dataset_path_;
+    std::string requested_period_ = "1min";
 };
 
 } // namespace tradereview::app

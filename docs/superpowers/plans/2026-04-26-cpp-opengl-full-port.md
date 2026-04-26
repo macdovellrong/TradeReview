@@ -179,12 +179,12 @@
 - Create: `native/tests/data/test_window_cache.cpp`
 - Modify: `native/tests/CMakeLists.txt`
 
-- [ ] Add request coalescing by chart id, generation, period, and visible range.
-- [ ] Add a small LRU window cache keyed by dataset, period, range, and indicator version.
-- [ ] Return results to the UI thread through Qt queued callbacks.
-- [ ] Drop stale results whose generation no longer matches the chart.
-- [ ] Static verification: `rg -n "DataScheduler|WindowCache|generation|queued|stale|LRU" native`.
-- [ ] Commit with message: `增加C++异步窗口加载`.
+- [x] Add request coalescing by chart id, generation, period, and visible range.
+- [x] Add a small LRU window cache keyed by dataset, period, range, and indicator version.
+- [x] Return results to the UI thread through Qt queued callbacks.
+- [x] Drop stale results whose generation no longer matches the chart.
+- [x] Static verification: `rg -n "DataScheduler|WindowCache|generation|queued|stale|LRU" native`.
+- [x] Commit with message: `增加C++异步窗口加载`.
 
 ### Task 7: Indicator Columns and Panels
 
@@ -476,3 +476,22 @@
 - `git diff --check HEAD -- native/app native/chart native/tests docs/superpowers/plans/2026-04-26-cpp-opengl-full-port.md` exited 0 with only LF-to-CRLF notices.
 - No native exe was launched.
 - Next task: Task 6, async window scheduler and cache.
+
+### 2026-04-26 Task 6 Completed
+
+- Added `DataScheduler` and `WindowCache` for off-UI-thread candle window queries, request coalescing, a small LRU cache, Qt queued callbacks, stale generation drops, and a joined single-worker queue.
+- Wired `DataLoadController` and `MainWindow` so initial loads and viewport reloads reuse one scheduler-backed controller instead of querying DuckDB directly from the UI path; dataset open now shares the scheduler's store lock with window queries.
+- Added native tests for LRU eviction, in-flight coalescing, cache hits across generations, queued receiver callbacks, destroyed receiver drops, serialized dataset open, queued stale-result drops, queued stale query skipping, and stale generation suppression.
+- Verified with `C:\Build\TradeReview-native-task6-off-msvc` using DuckDB OFF:
+  - configure exited 0;
+  - `cmake --build C:\Build\TradeReview-native-task6-off-msvc --target tradereview_native_tests --config Debug` exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task6-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`;
+  - `cmake --build C:\Build\TradeReview-native-task6-off-msvc --target tradereview_native --config Debug` exited 0.
+- Verified with `C:\Build\TradeReview-native-task6-msvc` using DuckDB ON:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task6-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Static verification: `rg -n "DataScheduler|WindowCache|generation|queued|stale|LRU" native`.
+- `git diff --check` exited 0 with only LF-to-CRLF notices.
+- No native exe was launched.
+- Next task: Task 7, indicator columns and panels.

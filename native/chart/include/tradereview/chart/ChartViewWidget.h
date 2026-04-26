@@ -25,7 +25,7 @@ public:
     ~ChartViewWidget() override;
 
     std::uint64_t bump_generation();
-    void apply_window(data::CandleWindow window);
+    bool apply_window(data::CandleWindow window);
     void set_reload_request_callback(ReloadRequestCallback callback);
     [[nodiscard]] const ChartSceneModel& scene_model() const;
 

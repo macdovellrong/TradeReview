@@ -14,7 +14,7 @@ public:
     explicit ChartWorkspaceWidget(QWidget* parent = nullptr);
 
     void setStatusCallback(ChartToolbarWidget::StatusCallback callback);
-    void apply_window(data::CandleWindow window);
+    bool apply_window(data::CandleWindow window);
     [[nodiscard]] ChartViewWidget& chart_view();
     [[nodiscard]] const ChartViewWidget& chart_view() const;
 

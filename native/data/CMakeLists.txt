@@ -2,9 +2,13 @@ option(TRADEREVIEW_NATIVE_WITH_DUCKDB "Build native data repository with DuckDB 
 
 add_library(tradereview_data STATIC
     src/CandleWindow.cpp
+    src/DataScheduler.cpp
     src/DuckDbRepository.cpp
     src/DuckDbSchema.cpp
+    src/WindowCache.cpp
 )
+
+find_package(Qt6 REQUIRED COMPONENTS Core)
 
 target_include_directories(tradereview_data
     PUBLIC
@@ -14,6 +18,7 @@ target_include_directories(tradereview_data
 target_link_libraries(tradereview_data
     PUBLIC
         tradereview_core
+        Qt6::Core
 )
 
 if(TRADEREVIEW_NATIVE_WITH_DUCKDB)

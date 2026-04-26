@@ -12,6 +12,7 @@ add_executable(tradereview_native_tests
     data/test_data_contracts.cpp
     data/test_duckdb_repository.cpp
     data/test_duckdb_schema.cpp
+    data/test_window_cache.cpp
     test_main.cpp
 )
 

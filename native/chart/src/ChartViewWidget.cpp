@@ -35,18 +35,21 @@ std::uint64_t ChartViewWidget::bump_generation()
     return scene_model_.bump_generation();
 }
 
-void ChartViewWidget::apply_window(data::CandleWindow window)
+bool ChartViewWidget::apply_window(data::CandleWindow window)
 {
-    if (scene_model_.apply_window(std::move(window))) {
-        if (scene_model_.window().has_visible_range()) {
-            interaction_.reset_for_visible_time_range(scene_model_.index_mapper(), scene_model_.window().visible_range);
-        } else {
-            interaction_.reset_for_row_count(scene_model_.row_count());
-        }
-        scene_model_.set_visible_dense_range(interaction_.visible_dense_range());
-        has_last_reload_request_ = false;
-        update();
+    if (!scene_model_.apply_window(std::move(window))) {
+        return false;
     }
+
+    if (scene_model_.window().has_visible_range()) {
+        interaction_.reset_for_visible_time_range(scene_model_.index_mapper(), scene_model_.window().visible_range);
+    } else {
+        interaction_.reset_for_row_count(scene_model_.row_count());
+    }
+    scene_model_.set_visible_dense_range(interaction_.visible_dense_range());
+    has_last_reload_request_ = false;
+    update();
+    return true;
 }
 
 void ChartViewWidget::set_reload_request_callback(ReloadRequestCallback callback)
