@@ -1,5 +1,6 @@
 add_executable(tradereview_native_tests
     chart/test_chart_index_mapper.cpp
+    chart/test_chart_interaction.cpp
     chart/test_chart_scene_model.cpp
     chart/test_candle_layer_geometry.cpp
     chart/test_lod_resolver.cpp

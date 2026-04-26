@@ -76,7 +76,7 @@ void GLChartRenderer::render(const ChartSceneModel& scene_model)
     }
 
     functions->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    candle_layer_.upload(*functions, scene_model.window(), scene_model.revision());
+    candle_layer_.upload(*functions, scene_model.window(), scene_model.visible_dense_range(), scene_model.revision());
     candle_layer_.render(*functions);
 }
 

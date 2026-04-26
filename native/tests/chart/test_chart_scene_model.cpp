@@ -56,6 +56,23 @@ void test_scene_model_revisions_same_generation_replacements()
     tradereview::core::assert_equal(model.revision(), std::uint64_t{2}, "revision tracks same generation replacement");
 }
 
+void test_scene_model_tracks_visible_dense_range_separately()
+{
+    tradereview::chart::ChartSceneModel model;
+    model.bump_generation();
+    auto window = sample_window(model.generation());
+    tradereview::core::assert_true(model.apply_window(std::move(window)), "matching generation is accepted");
+
+    const auto revision_after_window = model.revision();
+    tradereview::core::assert_true(model.set_visible_dense_range({1.0, 5.0}), "visible range change is accepted");
+
+    const auto range = model.visible_dense_range();
+    tradereview::core::assert_near(range.start_x, 1.0, 0.000001, "visible dense start");
+    tradereview::core::assert_near(range.end_x, 5.0, 0.000001, "visible dense end");
+    tradereview::core::assert_equal(model.row_count(), std::size_t{2}, "loaded row count stays separate");
+    tradereview::core::assert_equal(model.revision(), revision_after_window + 1, "visible range increments revision");
+}
+
 void test_scene_model_rejects_stale_generation()
 {
     tradereview::chart::ChartSceneModel model;
@@ -89,6 +106,9 @@ struct RegisterChartSceneModelTests {
         tradereview::tests::register_test(
             "scene model revisions same generation replacements",
             test_scene_model_revisions_same_generation_replacements);
+        tradereview::tests::register_test(
+            "scene model tracks visible dense range separately",
+            test_scene_model_tracks_visible_dense_range_separately);
         tradereview::tests::register_test(
             "scene model rejects stale generation",
             test_scene_model_rejects_stale_generation);

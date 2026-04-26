@@ -80,6 +80,39 @@ void test_candle_geometry_keeps_doji_body_visible()
     tradereview::core::assert_true(max_y > min_y, "doji candle body has visible height");
 }
 
+void test_candle_geometry_uses_visible_dense_range_for_right_padding()
+{
+    const auto geometry = tradereview::chart::rendering::build_candle_geometry(sample_window(), {0.0, 4.0});
+
+    float second_candle_max_x = geometry.body_vertices.at(6).x;
+    for (std::size_t index = 6; index < 12; ++index) {
+        second_candle_max_x = std::max(second_candle_max_x, geometry.body_vertices.at(index).x);
+    }
+
+    tradereview::core::assert_true(second_candle_max_x < 1.0F, "right padding keeps last candle away from right edge");
+}
+
+void test_candle_geometry_scales_y_from_visible_rows_only()
+{
+    tradereview::data::CandleWindow window;
+    window.generation = 4;
+    window.timestamp_ns = {100, 200, 300};
+    window.open = {1000.0, 10.0, 11.0};
+    window.high = {2000.0, 12.0, 13.0};
+    window.low = {900.0, 9.0, 10.0};
+    window.close = {1500.0, 11.0, 12.0};
+    window.volume = {1.0, 1.0, 1.0};
+
+    const auto geometry = tradereview::chart::rendering::build_candle_geometry(window, {0.5, 1.5});
+
+    tradereview::core::assert_equal(geometry.body_vertices.size(), std::size_t{6}, "only one visible candle body is uploaded");
+    float max_body_y = geometry.body_vertices.front().y;
+    for (const auto& vertex : geometry.body_vertices) {
+        max_body_y = std::max(max_body_y, vertex.y);
+    }
+    tradereview::core::assert_true(max_body_y > 0.2F, "off-screen extreme candle does not compress visible y scale");
+}
+
 struct RegisterCandleLayerGeometryTests {
     RegisterCandleLayerGeometryTests()
     {
@@ -92,6 +125,12 @@ struct RegisterCandleLayerGeometryTests {
         tradereview::tests::register_test(
             "candle geometry keeps doji body visible",
             test_candle_geometry_keeps_doji_body_visible);
+        tradereview::tests::register_test(
+            "candle geometry uses visible dense range for right padding",
+            test_candle_geometry_uses_visible_dense_range_for_right_padding);
+        tradereview::tests::register_test(
+            "candle geometry scales y from visible rows only",
+            test_candle_geometry_scales_y_from_visible_rows_only);
     }
 };
 

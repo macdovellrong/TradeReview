@@ -157,13 +157,13 @@
 - Create: `native/tests/chart/test_chart_interaction.cpp`
 - Modify: `native/tests/CMakeLists.txt`
 
-- [ ] Track visible dense-x range separately from loaded window data.
-- [ ] Add mouse drag panning and wheel zoom around cursor.
-- [ ] Add visual right padding after the last candle.
-- [ ] Emit/request reload when the visible time range leaves or nears the loaded range.
-- [ ] Preserve Python behavior from `ui/chart_windowing.py` and right-padding tests.
-- [ ] Static verification: `rg -n "ChartInteractionController|right.*padding|wheelEvent|mouseMoveEvent|reload" native/chart`.
-- [ ] Commit with message: `增加C++图表视口交互`.
+- [x] Track visible dense-x range separately from loaded window data.
+- [x] Add mouse drag panning and wheel zoom around cursor.
+- [x] Add visual right padding after the last candle.
+- [x] Emit/request reload when the visible time range leaves or nears the loaded range.
+- [x] Preserve Python behavior from `ui/chart_windowing.py` and right-padding tests.
+- [x] Static verification: `rg -n "ChartInteractionController|right.*padding|wheelEvent|mouseMoveEvent|reload" native/chart`.
+- [x] Commit with message: `增加C++图表视口交互`.
 
 ### Task 6: Async Window Scheduler and Cache
 
@@ -455,3 +455,24 @@
 - `git diff --check HEAD -- native/chart native/tests docs/superpowers/plans/2026-04-26-cpp-opengl-full-port.md` exited 0 with only LF-to-CRLF notices.
 - No native exe was launched.
 - Next task: Task 5, chart view interaction.
+
+### 2026-04-26 Task 5 Completed
+
+- Added `ChartInteractionController` for pure, tested viewport state: visible dense-x range, mouse-drag pan math, cursor-centered wheel zoom, right-edge visual padding, visible time range mapping, and reload decisions.
+- Wired `ChartViewWidget` mouse drag and wheel events to the controller, and added a reload request callback surfaced through the native main window status path as a placeholder until Task 6 adds async reload execution.
+- Updated `ChartSceneModel` to keep visible dense range separate from loaded `CandleWindow` data, with scene revisions invalidating OpenGL uploads when the viewport changes.
+- Updated `CandleLayer` to build geometry from the current visible dense range so the last candle can sit away from the right boundary and y scaling uses visible rows rather than off-screen loaded rows.
+- Added tests for pan, zoom, wheel delta magnitude/pixel delta, buffered-window visible range preservation, right padding, reload decisions, visible range revisions, right-padded geometry, and visible-row y scaling.
+- Code review found that buffered window application could snap to the full loaded range, y scaling could include off-screen rows, and high-resolution wheel events could be ignored; all were fixed before commit.
+- Verified with `C:\Build\TradeReview-native-task5-msvc` using DuckDB ON:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task5-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Verified with `C:\Build\TradeReview-native-task5-off-msvc` using DuckDB OFF:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task5-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Static verification: `rg -n "ChartInteractionController|right.*padding|wheelEvent|mouseMoveEvent|reload" native/chart`.
+- `git diff --check HEAD -- native/app native/chart native/tests docs/superpowers/plans/2026-04-26-cpp-opengl-full-port.md` exited 0 with only LF-to-CRLF notices.
+- No native exe was launched.
+- Next task: Task 6, async window scheduler and cache.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "tradereview/chart/ChartInteractionController.h"
 #include "tradereview/chart/rendering/GLResources.h"
 #include "tradereview/data/CandleWindow.h"
 
@@ -30,12 +31,17 @@ struct CandleGeometry {
 };
 
 [[nodiscard]] CandleGeometry build_candle_geometry(const data::CandleWindow& window);
+[[nodiscard]] CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRange visible_dense_range);
 
 class CandleLayer final {
 public:
     void initialize(QOpenGLFunctions_3_3_Core& gl);
     void release(QOpenGLFunctions_3_3_Core& gl);
-    void upload(QOpenGLFunctions_3_3_Core& gl, const data::CandleWindow& window, std::uint64_t window_revision);
+    void upload(
+        QOpenGLFunctions_3_3_Core& gl,
+        const data::CandleWindow& window,
+        DenseRange visible_dense_range,
+        std::uint64_t window_revision);
     void render(QOpenGLFunctions_3_3_Core& gl) const;
 
     [[nodiscard]] std::uint64_t uploaded_generation() const;

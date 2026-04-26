@@ -34,6 +34,20 @@ bool ChartSceneModel::apply_window(data::CandleWindow window)
     return true;
 }
 
+bool ChartSceneModel::set_visible_dense_range(DenseRange range)
+{
+    if (range.end_x < range.start_x) {
+        std::swap(range.start_x, range.end_x);
+    }
+    if (visible_dense_range_.start_x == range.start_x && visible_dense_range_.end_x == range.end_x) {
+        return false;
+    }
+
+    visible_dense_range_ = range;
+    ++revision_;
+    return true;
+}
+
 std::size_t ChartSceneModel::row_count() const
 {
     return window_.row_count();
@@ -42,6 +56,11 @@ std::size_t ChartSceneModel::row_count() const
 const data::CandleWindow& ChartSceneModel::window() const
 {
     return window_;
+}
+
+DenseRange ChartSceneModel::visible_dense_range() const
+{
+    return visible_dense_range_;
 }
 
 const ChartIndexMapper& ChartSceneModel::index_mapper() const

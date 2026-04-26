@@ -53,20 +53,47 @@ void main()
     return static_cast<float>((normalized * 2.0) - 1.0);
 }
 
-[[nodiscard]] float candle_center_x(std::size_t row, std::size_t rows)
+[[nodiscard]] DenseRange normalized_visible_range(DenseRange range)
 {
-    if (rows <= 1) {
-        return 0.0F;
+    if (!std::isfinite(range.start_x) || !std::isfinite(range.end_x)) {
+        return {0.0, 1.0};
     }
-    return -1.0F + (static_cast<float>(row) * (2.0F / static_cast<float>(rows - 1)));
+    if (range.end_x < range.start_x) {
+        std::swap(range.start_x, range.end_x);
+    }
+    if (range.end_x <= range.start_x) {
+        range.end_x = range.start_x + 1.0;
+    }
+    return range;
 }
 
-[[nodiscard]] float candle_half_width(std::size_t rows)
+[[nodiscard]] bool visible_row_bounds(DenseRange range, std::size_t rows, std::size_t& first_row, std::size_t& last_row)
 {
-    if (rows <= 1) {
-        return 0.28F;
+    const auto first_visible_row = std::ceil(range.start_x);
+    const auto last_visible_row = std::floor(range.end_x);
+    if (last_visible_row < 0.0 || first_visible_row > static_cast<double>(rows - 1)) {
+        return false;
     }
-    return std::min(0.32F, 0.35F * (2.0F / static_cast<float>(rows - 1)));
+
+    first_row = static_cast<std::size_t>(std::max(0.0, first_visible_row));
+    last_row = static_cast<std::size_t>(std::min(static_cast<double>(rows - 1), last_visible_row));
+    if (last_row < first_row) {
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] float candle_center_x(std::size_t row, DenseRange visible_dense_range)
+{
+    const auto span = std::max(visible_dense_range.span(), 1.0);
+    const auto normalized = (static_cast<double>(row) - visible_dense_range.start_x) / span;
+    return static_cast<float>((normalized * 2.0) - 1.0);
+}
+
+[[nodiscard]] float candle_half_width(DenseRange visible_dense_range)
+{
+    const auto span = static_cast<float>(std::max(visible_dense_range.span(), 1.0));
+    return std::min(0.32F, 0.35F * (2.0F / span));
 }
 
 void append_body(
@@ -137,15 +164,32 @@ bool CandleGeometry::empty() const
 
 CandleGeometry build_candle_geometry(const data::CandleWindow& window)
 {
+    if (window.empty()) {
+        return CandleGeometry{window.generation};
+    }
+    return build_candle_geometry(window, DenseRange{0.0, static_cast<double>(window.row_count() - 1)});
+}
+
+CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRange visible_dense_range)
+{
     CandleGeometry geometry;
     geometry.generation = window.generation;
     if (window.empty() || !window.has_consistent_ohlcv()) {
         return geometry;
     }
 
+    const auto range = normalized_visible_range(visible_dense_range);
+    const auto rows = window.row_count();
+    std::size_t first_row = 0;
+    std::size_t last_row = 0;
+    if (!visible_row_bounds(range, rows, first_row, last_row)) {
+        append_grid(geometry.grid_vertices);
+        return geometry;
+    }
+
     auto min_price = std::numeric_limits<double>::max();
     auto max_price = std::numeric_limits<double>::lowest();
-    for (std::size_t row = 0; row < window.row_count(); ++row) {
+    for (std::size_t row = first_row; row <= last_row; ++row) {
         if (!finite_candle_row(window, row)) {
             continue;
         }
@@ -161,16 +205,15 @@ CandleGeometry build_candle_geometry(const data::CandleWindow& window)
     }
 
     append_grid(geometry.grid_vertices);
-    const auto rows = window.row_count();
-    const auto half_width = candle_half_width(rows);
-    geometry.body_vertices.reserve(rows * 6);
-    geometry.wick_vertices.reserve(rows * 2);
-    for (std::size_t row = 0; row < rows; ++row) {
+    const auto half_width = candle_half_width(range);
+    geometry.body_vertices.reserve((last_row - first_row + 1) * 6);
+    geometry.wick_vertices.reserve((last_row - first_row + 1) * 2);
+    for (std::size_t row = first_row; row <= last_row; ++row) {
         if (!finite_candle_row(window, row)) {
             continue;
         }
 
-        const auto center_x = candle_center_x(row, rows);
+        const auto center_x = candle_center_x(row, range);
         const auto left = std::clamp(center_x - half_width, -1.0F, 1.0F);
         const auto right = std::clamp(center_x + half_width, -1.0F, 1.0F);
         const auto open_y = normalized_y(window.open[row], min_price, max_price);
@@ -219,14 +262,18 @@ void CandleLayer::release(QOpenGLFunctions_3_3_Core& gl)
     wick_vertex_count_ = 0;
 }
 
-void CandleLayer::upload(QOpenGLFunctions_3_3_Core& gl, const data::CandleWindow& window, std::uint64_t window_revision)
+void CandleLayer::upload(
+    QOpenGLFunctions_3_3_Core& gl,
+    const data::CandleWindow& window,
+    DenseRange visible_dense_range,
+    std::uint64_t window_revision)
 {
     if (uploaded_generation_ == window.generation && uploaded_revision_ == window_revision) {
         return;
     }
 
     initialize(gl);
-    const auto geometry = build_candle_geometry(window);
+    const auto geometry = build_candle_geometry(window, visible_dense_range);
     upload_vertices(gl, grid_vertex_array_, grid_buffer_, geometry.grid_vertices);
     upload_vertices(gl, body_vertex_array_, body_buffer_, geometry.body_vertices);
     upload_vertices(gl, wick_vertex_array_, wick_buffer_, geometry.wick_vertices);

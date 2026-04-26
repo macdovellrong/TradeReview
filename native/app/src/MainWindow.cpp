@@ -2,6 +2,7 @@
 
 #include "tradereview/app/DataLoadController.h"
 #include "tradereview/app/MainControlsBar.h"
+#include "tradereview/chart/ChartViewWidget.h"
 #include "tradereview/chart/ChartWorkspaceWidget.h"
 
 #include <QDateTime>
@@ -56,6 +57,11 @@ MainWindow::MainWindow(QWidget* parent)
     };
     mainControls->setStatusCallback(showPlaceholderStatus);
     chartWorkspace->setStatusCallback(showPlaceholderStatus);
+    chartWorkspace->chart_view().set_reload_request_callback([showPlaceholderStatus](core::TimeRange range) {
+        showPlaceholderStatus(QString("Window reload requested (%1 to %2)")
+            .arg(formatTimestamp(range.start_ns))
+            .arg(formatTimestamp(range.end_ns)));
+    });
     mainControls->setLoadDataCallback([this, chartWorkspace]() {
         const auto path = QFileDialog::getOpenFileName(this, "Load DuckDB Data", QString(), "DuckDB (*.duckdb)");
         if (path.isEmpty()) {
