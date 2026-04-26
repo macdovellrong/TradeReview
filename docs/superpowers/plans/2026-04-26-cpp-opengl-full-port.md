@@ -403,3 +403,18 @@
   - `ctest --test-dir C:\Build\TradeReview-native-task2-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
 - No native exe was launched.
 - Next task: Task 3, single chart data loading path.
+
+### 2026-04-26 DuckDB Local Dependency Downloaded
+
+- Downloaded official DuckDB `v1.5.2` Windows x64 C API package from `https://github.com/duckdb/duckdb/releases/download/v1.5.2/libduckdb-windows-amd64.zip`.
+- Local zip: `C:\Build\deps\libduckdb-windows-amd64-v1.5.2.zip`.
+- Extracted directory: `C:\Build\deps\duckdb-v1.5.2`.
+- Extracted files: `duckdb.h`, `duckdb.hpp`, `duckdb.lib`, `duckdb.dll`.
+- SHA256:
+  - zip: `C60BD7DEB0EF6C2D5C12A9765B93ED930C34B984D4DB79104A8C2955BC57017D`
+  - `duckdb.lib`: `66274DB0EFECE69AC05A0C54F626C04A17B12A99E5302CDF34E0DC6F696773AE`
+  - `duckdb.dll`: `8BDBF7CFE619482E64F30E99C628EAEE28936C5B10FE8459BAEA9DF8B78095B6`
+- Suggested CMake variables for DuckDB-enabled temporary builds:
+  - `-DTRADEREVIEW_NATIVE_WITH_DUCKDB=ON`
+  - `-DDUCKDB_INCLUDE_DIR=C:\Build\deps\duckdb-v1.5.2`
+  - `-DDUCKDB_LIBRARY=C:\Build\deps\duckdb-v1.5.2\duckdb.lib`
