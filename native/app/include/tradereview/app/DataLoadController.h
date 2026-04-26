@@ -70,6 +70,24 @@ public:
         chart::ChartWorkspaceWidget& workspace,
         QObject* receiver,
         LoadCallback callback);
+    data::ScheduleSubmitStatus reset_view_async(
+        chart::ChartWorkspaceWidget& workspace,
+        QObject* receiver,
+        LoadCallback callback);
+    data::ScheduleSubmitStatus jump_to_time_async(
+        std::int64_t target_time_ns,
+        chart::ChartWorkspaceWidget& workspace,
+        QObject* receiver,
+        LoadCallback callback);
+    data::ScheduleSubmitStatus step_time_async(
+        std::int64_t delta_ns,
+        chart::ChartWorkspaceWidget& workspace,
+        QObject* receiver,
+        LoadCallback callback);
+    [[nodiscard]] bool dataset_loaded() const;
+    [[nodiscard]] const data::DataSetInfo& dataset_info() const;
+    [[nodiscard]] const std::string& dataset_path() const;
+    [[nodiscard]] std::int64_t current_view_center_time_ns(const chart::ChartWorkspaceWidget& workspace) const;
     void set_replay_enabled(bool enabled, chart::ChartWorkspaceWidget& workspace);
     [[nodiscard]] bool replay_enabled() const;
     [[nodiscard]] bool replay_playing() const;
@@ -82,6 +100,11 @@ public:
 private:
     data::ScheduleSubmitStatus submit_window_async(
         data::CandleWindowRequest request,
+        chart::ChartWorkspaceWidget& workspace,
+        QObject* receiver,
+        LoadCallback callback);
+    data::ScheduleSubmitStatus request_all_enabled_windows_async(
+        core::TimeRange visible_range,
         chart::ChartWorkspaceWidget& workspace,
         QObject* receiver,
         LoadCallback callback);

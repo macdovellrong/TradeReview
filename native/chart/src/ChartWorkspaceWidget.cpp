@@ -76,6 +76,18 @@ bool ChartWorkspaceWidget::setLayoutMode(ChartLayoutMode mode)
     return true;
 }
 
+bool ChartWorkspaceWidget::setRequestedPeriod(std::uint64_t chart_id, std::string period)
+{
+    auto* target_panel = panel(chart_id);
+    if (target_panel == nullptr || period.empty()) {
+        return false;
+    }
+
+    const auto changed = state_.set_chart_period(chart_id, period);
+    target_panel->set_requested_period(std::move(period));
+    return changed;
+}
+
 bool ChartWorkspaceWidget::apply_window(data::CandleWindow window)
 {
     if (!state_.chart_enabled(window.chart_id)) {

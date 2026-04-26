@@ -33,6 +33,7 @@ public:
     void setReloadRequestCallback(ReloadRequestCallback callback);
     bool setChartCount(int count);
     bool setLayoutMode(ChartLayoutMode mode);
+    bool setRequestedPeriod(std::uint64_t chart_id, std::string period);
     bool apply_window(data::CandleWindow window);
     [[nodiscard]] ChartViewWidget& chart_view();
     [[nodiscard]] const ChartViewWidget& chart_view() const;

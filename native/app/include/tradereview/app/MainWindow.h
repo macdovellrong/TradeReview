@@ -3,6 +3,7 @@
 #include "tradereview/app/DataLoadController.h"
 
 #include <QMainWindow>
+#include <QSettings>
 
 #include <memory>
 
@@ -13,6 +14,7 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
 
 private:
+    QSettings settings_;
     std::unique_ptr<DataLoadController> data_load_controller_;
 };
 

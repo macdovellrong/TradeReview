@@ -2,6 +2,8 @@
 
 #include "tradereview/app/DataLoadController.h"
 #include "tradereview/app/MainControlsBar.h"
+#include "tradereview/app/SessionState.h"
+#include "tradereview/app/TimeNavigation.h"
 #include "tradereview/chart/ChartViewWidget.h"
 #include "tradereview/chart/ChartWorkspaceWidget.h"
 
@@ -16,30 +18,54 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <memory>
+#include <string>
 
 namespace tradereview::app {
 namespace {
 
 chart::ChartLayoutMode layoutModeFromText(const QString& text)
 {
-    if (text == "Vertical") {
-        return chart::ChartLayoutMode::Vertical;
-    }
-    if (text == "Dual Vertical") {
-        return chart::ChartLayoutMode::DualVertical;
-    }
-    if (text == "Grid 2x2") {
-        return chart::ChartLayoutMode::Grid2x2;
+    const auto utf8 = text.toUtf8();
+    const auto parsed = layout_mode_from_string({utf8.constData(), static_cast<std::size_t>(utf8.size())});
+    if (parsed.has_value()) {
+        return *parsed;
     }
     return chart::ChartLayoutMode::Tabs;
+}
+
+QString layoutModeText(chart::ChartLayoutMode mode)
+{
+    const auto text = layout_mode_to_string(mode);
+    return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
+}
+
+QString qstringFromStdString(const std::string& text)
+{
+    return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
 }
 
 QString formatTimestamp(std::int64_t timestamp_ns)
 {
     return QDateTime::fromMSecsSinceEpoch(timestamp_ns / 1000000LL, QTimeZone::UTC).toString(Qt::ISODate);
+}
+
+std::int64_t midpoint(core::TimeRange range)
+{
+    return range.start_ns + ((range.end_ns - range.start_ns) / 2);
+}
+
+void syncWorkspaceToTarget(
+    chart::ChartWorkspaceWidget& workspace,
+    const data::CandleWindow& window,
+    std::int64_t target_ns)
+{
+    if (const auto target = resolve_chart_target_row(window, target_ns); target.has_value()) {
+        workspace.syncCenterFrom(window.chart_id, target_ns, target->close);
+    }
 }
 
 QString loadedMessage(const QString& path, const LoadResult& result)
@@ -86,6 +112,7 @@ QString replayMessage(const ReplayUpdateResult& result)
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
+    , settings_("TradeReview", "TradeReview")
     , data_load_controller_(std::make_unique<DataLoadController>())
 {
     setWindowTitle("TradeReview Native");
@@ -128,6 +155,63 @@ MainWindow::MainWindow(QWidget* parent)
         chartWorkspace->setChartCount(count);
         statusBar()->showMessage(QString("Charts %1").arg(count));
     });
+    mainControls->setResetViewCallback([this, chartWorkspace, mainControls]() {
+        try {
+            const auto status = data_load_controller_->reset_view_async(
+                *chartWorkspace,
+                this,
+                [this, mainControls](LoadResult result) {
+                    mainControls->setDateTimeValue(midpoint(result.window.visible_range));
+                    statusBar()->showMessage(windowMessage(result));
+                });
+            const auto center = data_load_controller_->current_view_center_time_ns(*chartWorkspace);
+            mainControls->setDateTimeValue(center);
+            statusBar()->showMessage(pendingMessage(status));
+        } catch (const std::exception& error) {
+            statusBar()->showMessage(QString("Reset View failed: ") + error.what());
+        }
+    });
+    mainControls->setSaveViewCallback([this, chartWorkspace]() {
+        try {
+            if (!data_load_controller_->dataset_loaded()) {
+                statusBar()->showMessage("Load a dataset before saving the view");
+                return;
+            }
+
+            SessionState state;
+            state.dataset_path = data_load_controller_->dataset_path();
+            state.center_time_ns = data_load_controller_->current_view_center_time_ns(*chartWorkspace);
+            state.chart_count = static_cast<int>(chartWorkspace->chart_count());
+            state.layout_mode = chartWorkspace->layout_mode();
+            for (std::uint64_t chart_id = 1; chart_id <= 4; ++chart_id) {
+                state.periods.push_back(chartWorkspace->requested_period(chart_id));
+            }
+            save_session_state(settings_, state);
+            statusBar()->showMessage("View saved");
+        } catch (const std::exception& error) {
+            statusBar()->showMessage(QString("Save View failed: ") + error.what());
+        }
+    });
+    mainControls->setDateTimeJumpCallback([this, chartWorkspace, mainControls](std::int64_t timestamp_ns) {
+        try {
+            const auto target = clamp_jump_timestamp_ns(
+                normalize_jump_timestamp_ns(timestamp_ns),
+                data_load_controller_->dataset_info().tick_range);
+            const auto status = data_load_controller_->jump_to_time_async(
+                target,
+                *chartWorkspace,
+                this,
+                [this, chartWorkspace, mainControls, target](LoadResult result) {
+                    syncWorkspaceToTarget(*chartWorkspace, result.window, target);
+                    mainControls->setDateTimeValue(target);
+                    statusBar()->showMessage(windowMessage(result));
+                });
+            mainControls->setDateTimeValue(target);
+            statusBar()->showMessage(pendingMessage(status));
+        } catch (const std::exception& error) {
+            statusBar()->showMessage(QString("Date jump failed: ") + error.what());
+        }
+    });
     mainControls->setReplayModeCallback([this, chartWorkspace, mainControls](bool enabled) {
         try {
             data_load_controller_->set_replay_enabled(enabled, *chartWorkspace);
@@ -152,19 +236,36 @@ MainWindow::MainWindow(QWidget* parent)
     });
     mainControls->setReplayStepCallback([this, chartWorkspace, mainControls](std::int64_t delta_ns) {
         try {
-            const auto result = data_load_controller_->advance_replay_by(delta_ns, *chartWorkspace);
-            mainControls->setReplayPlaying(result.playing);
-            statusBar()->showMessage(replayMessage(result));
+            if (data_load_controller_->replay_enabled()) {
+                const auto result = data_load_controller_->advance_replay_by(delta_ns, *chartWorkspace);
+                mainControls->setReplayPlaying(result.playing);
+                mainControls->setDateTimeValue(result.current_time_ns);
+                statusBar()->showMessage(replayMessage(result));
+                return;
+            }
+
+            const auto status = data_load_controller_->step_time_async(
+                delta_ns,
+                *chartWorkspace,
+                this,
+                [this, chartWorkspace, mainControls](LoadResult result) {
+                    const auto target = midpoint(result.window.visible_range);
+                    syncWorkspaceToTarget(*chartWorkspace, result.window, target);
+                    mainControls->setDateTimeValue(target);
+                    statusBar()->showMessage(windowMessage(result));
+                });
+            mainControls->setDateTimeValue(data_load_controller_->current_view_center_time_ns(*chartWorkspace));
+            statusBar()->showMessage(pendingMessage(status));
         } catch (const std::exception& error) {
             mainControls->setReplayPlaying(false);
-            statusBar()->showMessage(QString("Replay step failed: ") + error.what());
+            statusBar()->showMessage(QString("Step failed: ") + error.what());
         }
     });
     mainControls->setReplaySpeedCallback([this](int speed) {
         data_load_controller_->set_replay_speed(speed);
         statusBar()->showMessage(QString("Replay Speed %1x").arg(speed));
     });
-    mainControls->setLoadDataCallback([this, chartWorkspace]() {
+    mainControls->setLoadDataCallback([this, chartWorkspace, mainControls]() {
         const auto path = QFileDialog::getOpenFileName(this, "Load DuckDB Data", QString(), "DuckDB (*.duckdb)");
         if (path.isEmpty()) {
             return;
@@ -175,9 +276,14 @@ MainWindow::MainWindow(QWidget* parent)
                 path,
                 *chartWorkspace,
                 this,
-                [this, path](LoadResult result) {
+                [this, path, mainControls](LoadResult result) {
+                    mainControls->setDateTimeRange(result.dataset_info.tick_range.start_ns, result.dataset_info.tick_range.end_ns);
+                    mainControls->setDateTimeValue(midpoint(result.window.visible_range));
                     statusBar()->showMessage(loadedMessage(path, result));
                 });
+            const auto& info = data_load_controller_->dataset_info();
+            mainControls->setDateTimeRange(info.tick_range.start_ns, info.tick_range.end_ns);
+            mainControls->setDateTimeValue(midpoint(info.tick_range));
             statusBar()->showMessage(pendingMessage(status));
         } catch (const std::exception& error) {
             statusBar()->showMessage(QString("Load Data failed: ") + error.what());
@@ -196,6 +302,7 @@ MainWindow::MainWindow(QWidget* parent)
         try {
             const auto result = data_load_controller_->advance_replay_by_speed(*chartWorkspace);
             mainControls->setReplayPlaying(result.playing);
+            mainControls->setDateTimeValue(result.current_time_ns);
             if (result.reached_end) {
                 statusBar()->showMessage(replayMessage(result));
             }
@@ -205,6 +312,53 @@ MainWindow::MainWindow(QWidget* parent)
         }
     });
     replayTimer->start(100);
+
+    QTimer::singleShot(0, this, [this, chartWorkspace, mainControls]() {
+        const auto state = load_session_state(settings_);
+        if (!state.has_value()) {
+            return;
+        }
+        if (!QFileInfo::exists(qstringFromStdString(state->dataset_path))) {
+            return;
+        }
+
+        chartWorkspace->setChartCount(state->chart_count);
+        chartWorkspace->setLayoutMode(state->layout_mode);
+        mainControls->setChartCountValue(state->chart_count);
+        mainControls->setLayoutModeText(layoutModeText(state->layout_mode));
+        for (std::size_t index = 0; index < state->periods.size() && index < 4; ++index) {
+            chartWorkspace->setRequestedPeriod(static_cast<std::uint64_t>(index + 1), state->periods[index]);
+        }
+
+        const auto path = qstringFromStdString(state->dataset_path);
+        try {
+            const auto status = data_load_controller_->load_file_async(
+                path,
+                *chartWorkspace,
+                this,
+                [this, path, mainControls](LoadResult result) {
+                    mainControls->setDateTimeRange(result.dataset_info.tick_range.start_ns, result.dataset_info.tick_range.end_ns);
+                    mainControls->setDateTimeValue(midpoint(result.window.visible_range));
+                    statusBar()->showMessage(loadedMessage(path, result));
+                });
+            const auto& info = data_load_controller_->dataset_info();
+            const auto target = clamp_jump_timestamp_ns(state->center_time_ns, info.tick_range);
+            mainControls->setDateTimeRange(info.tick_range.start_ns, info.tick_range.end_ns);
+            mainControls->setDateTimeValue(target);
+            data_load_controller_->jump_to_time_async(
+                target,
+                *chartWorkspace,
+                this,
+                [this, chartWorkspace, mainControls, target](LoadResult result) {
+                    syncWorkspaceToTarget(*chartWorkspace, result.window, target);
+                    mainControls->setDateTimeValue(target);
+                    statusBar()->showMessage(windowMessage(result));
+                });
+            statusBar()->showMessage(pendingMessage(status));
+        } catch (const std::exception& error) {
+            statusBar()->showMessage(QString("Restore View failed: ") + error.what());
+        }
+    });
 
     statusBar()->showMessage("Native OpenGL chart ready");
 }

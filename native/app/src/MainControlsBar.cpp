@@ -10,6 +10,8 @@
 #include <QPushButton>
 #include <QString>
 #include <QStringList>
+#include <QSignalBlocker>
+#include <QTimeZone>
 
 #include <cstdint>
 #include <utility>
@@ -19,6 +21,7 @@ namespace {
 
 constexpr int kControlHeight = 28;
 constexpr std::int64_t kNanosecondsPerSecond = 1000LL * 1000LL * 1000LL;
+constexpr std::int64_t kNanosecondsPerMillisecond = 1000LL * 1000LL;
 
 QString placeholderMessage(const QString& action)
 {
@@ -63,6 +66,16 @@ std::int64_t stepNanoseconds(const QString& text)
         return 24LL * 60LL * 60LL * kNanosecondsPerSecond;
     }
     return 60LL * 60LL * kNanosecondsPerSecond;
+}
+
+QDateTime dateTimeFromNs(std::int64_t timestamp_ns)
+{
+    return QDateTime::fromMSecsSinceEpoch(timestamp_ns / kNanosecondsPerMillisecond, QTimeZone::UTC);
+}
+
+std::int64_t dateTimeToNs(const QDateTime& date_time)
+{
+    return date_time.toUTC().toMSecsSinceEpoch() * kNanosecondsPerMillisecond;
 }
 
 } // namespace
@@ -112,6 +125,14 @@ MainControlsBar::MainControlsBar(QWidget* parent)
             connect(button, &QPushButton::clicked, this, [this](bool) {
                 loadData();
             });
+        } else if (action == "Reset View") {
+            connect(button, &QPushButton::clicked, this, [this](bool) {
+                resetView();
+            });
+        } else if (action == "Save View") {
+            connect(button, &QPushButton::clicked, this, [this](bool) {
+                saveView();
+            });
         } else {
             connect(button, &QPushButton::clicked, this, [this, action](bool) {
                 notify(action);
@@ -120,13 +141,13 @@ MainControlsBar::MainControlsBar(QWidget* parent)
     }
 
     layout->addWidget(new QLabel("Layout:", this));
-    auto* layoutCombo = new QComboBox(this);
-    layoutCombo->addItems({"Tabs", "Dual Vertical", "Grid 2x2", "Vertical"});
-    layoutCombo->setMinimumHeight(kControlHeight);
-    connect(layoutCombo, &QComboBox::currentTextChanged, this, [this](const QString& text) {
+    layout_combo_ = new QComboBox(this);
+    layout_combo_->addItems({"Tabs", "Dual Vertical", "Grid 2x2", "Vertical"});
+    layout_combo_->setMinimumHeight(kControlHeight);
+    connect(layout_combo_, &QComboBox::currentTextChanged, this, [this](const QString& text) {
         selectLayoutMode(text);
     });
-    layout->addWidget(layoutCombo);
+    layout->addWidget(layout_combo_);
 
     auto* popLayoutButton = addButton(layout, this, "Pop Layout");
     connect(popLayoutButton, &QPushButton::clicked, this, [this](bool) {
@@ -134,14 +155,14 @@ MainControlsBar::MainControlsBar(QWidget* parent)
     });
 
     layout->addWidget(new QLabel("Charts:", this));
-    auto* chartsCombo = new QComboBox(this);
-    chartsCombo->addItems({"1", "2", "3", "4"});
-    chartsCombo->setCurrentText("4");
-    chartsCombo->setMinimumHeight(kControlHeight);
-    connect(chartsCombo, &QComboBox::currentTextChanged, this, [this](const QString& text) {
+    charts_combo_ = new QComboBox(this);
+    charts_combo_->addItems({"1", "2", "3", "4"});
+    charts_combo_->setCurrentText("4");
+    charts_combo_->setMinimumHeight(kControlHeight);
+    connect(charts_combo_, &QComboBox::currentTextChanged, this, [this](const QString& text) {
         selectChartCount(text);
     });
-    layout->addWidget(chartsCombo);
+    layout->addWidget(charts_combo_);
 
     auto* replayMode = new QCheckBox("Replay Mode", this);
     connect(replayMode, &QCheckBox::toggled, this, [this](bool checked) {
@@ -197,16 +218,17 @@ MainControlsBar::MainControlsBar(QWidget* parent)
         });
     }
 
-    auto* dateTimeEdit = new QDateTimeEdit(this);
-    dateTimeEdit->setDisplayFormat("yyyy-MM-dd HH:mm");
-    dateTimeEdit->setCalendarPopup(true);
-    dateTimeEdit->setKeyboardTracking(false);
-    dateTimeEdit->setDateTime(QDateTime::currentDateTime());
-    dateTimeEdit->setMinimumHeight(kControlHeight);
-    connect(dateTimeEdit, &QDateTimeEdit::editingFinished, this, [this]() {
-        notify("Date Time");
+    date_time_edit_ = new QDateTimeEdit(this);
+    date_time_edit_->setDisplayFormat("yyyy-MM-dd HH:mm");
+    date_time_edit_->setCalendarPopup(true);
+    date_time_edit_->setKeyboardTracking(false);
+    date_time_edit_->setTimeZone(QTimeZone::UTC);
+    date_time_edit_->setDateTime(QDateTime::currentDateTimeUtc());
+    date_time_edit_->setMinimumHeight(kControlHeight);
+    connect(date_time_edit_, &QDateTimeEdit::editingFinished, this, [this]() {
+        jumpToDateTime();
     });
-    layout->addWidget(dateTimeEdit);
+    layout->addWidget(date_time_edit_);
 
     layout->addStretch();
     setReplayControlsEnabled(false);
@@ -222,6 +244,16 @@ void MainControlsBar::setLoadDataCallback(LoadDataCallback callback)
     load_data_callback_ = std::move(callback);
 }
 
+void MainControlsBar::setResetViewCallback(ResetViewCallback callback)
+{
+    reset_view_callback_ = std::move(callback);
+}
+
+void MainControlsBar::setSaveViewCallback(SaveViewCallback callback)
+{
+    save_view_callback_ = std::move(callback);
+}
+
 void MainControlsBar::setLayoutModeCallback(LayoutModeCallback callback)
 {
     layout_mode_callback_ = std::move(callback);
@@ -230,6 +262,11 @@ void MainControlsBar::setLayoutModeCallback(LayoutModeCallback callback)
 void MainControlsBar::setChartCountCallback(ChartCountCallback callback)
 {
     chart_count_callback_ = std::move(callback);
+}
+
+void MainControlsBar::setDateTimeJumpCallback(DateTimeJumpCallback callback)
+{
+    date_time_jump_callback_ = std::move(callback);
 }
 
 void MainControlsBar::setReplayModeCallback(ReplayModeCallback callback)
@@ -272,11 +309,69 @@ void MainControlsBar::setReplayPlaying(bool playing)
     }
 }
 
+void MainControlsBar::setDateTimeRange(std::int64_t start_ns, std::int64_t end_ns)
+{
+    if (date_time_edit_ == nullptr) {
+        return;
+    }
+    if (end_ns < start_ns) {
+        end_ns = start_ns;
+    }
+    QSignalBlocker blocker(date_time_edit_);
+    date_time_edit_->setMinimumDateTime(dateTimeFromNs(start_ns));
+    date_time_edit_->setMaximumDateTime(dateTimeFromNs(end_ns));
+}
+
+void MainControlsBar::setDateTimeValue(std::int64_t timestamp_ns)
+{
+    if (date_time_edit_ == nullptr) {
+        return;
+    }
+    QSignalBlocker blocker(date_time_edit_);
+    date_time_edit_->setDateTime(dateTimeFromNs(timestamp_ns));
+}
+
+void MainControlsBar::setLayoutModeText(const QString& text)
+{
+    if (layout_combo_ == nullptr) {
+        return;
+    }
+    QSignalBlocker blocker(layout_combo_);
+    layout_combo_->setCurrentText(text);
+}
+
+void MainControlsBar::setChartCountValue(int count)
+{
+    if (charts_combo_ == nullptr) {
+        return;
+    }
+    QSignalBlocker blocker(charts_combo_);
+    charts_combo_->setCurrentText(QString::number(count));
+}
+
 void MainControlsBar::loadData() const
 {
     if (load_data_callback_) {
         load_data_callback_();
     }
+}
+
+void MainControlsBar::resetView() const
+{
+    if (reset_view_callback_) {
+        reset_view_callback_();
+        return;
+    }
+    notify("Reset View");
+}
+
+void MainControlsBar::saveView() const
+{
+    if (save_view_callback_) {
+        save_view_callback_();
+        return;
+    }
+    notify("Save View");
 }
 
 void MainControlsBar::selectLayoutMode(const QString& mode) const
@@ -291,6 +386,15 @@ void MainControlsBar::selectChartCount(const QString& count) const
     if (chart_count_callback_) {
         chart_count_callback_(count.toInt());
     }
+}
+
+void MainControlsBar::jumpToDateTime() const
+{
+    if (date_time_jump_callback_ && date_time_edit_ != nullptr) {
+        date_time_jump_callback_(dateTimeToNs(date_time_edit_->dateTime()));
+        return;
+    }
+    notify("Date Time");
 }
 
 void MainControlsBar::setReplayMode(bool enabled) const

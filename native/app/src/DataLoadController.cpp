@@ -1,5 +1,6 @@
 #include "tradereview/app/DataLoadController.h"
 
+#include "tradereview/app/TimeNavigation.h"
 #include "tradereview/chart/ChartViewWidget.h"
 #include "tradereview/chart/ChartWorkspaceWidget.h"
 #include "tradereview/core/Period.h"
@@ -138,6 +139,23 @@ std::int64_t replayStartTime(const chart::ChartWorkspaceWidget& workspace, const
     return dataset_info.tick_range.start_ns;
 }
 
+std::int64_t midpoint(core::TimeRange range)
+{
+    return range.start_ns + ((range.end_ns - range.start_ns) / 2);
+}
+
+std::int64_t activeVisibleWidthNs(const chart::ChartWorkspaceWidget& workspace)
+{
+    try {
+        const auto& window = workspace.chart_view(workspace.active_chart_id()).scene_model().window();
+        if (window.has_visible_range() && window.visible_range.end_ns > window.visible_range.start_ns) {
+            return window.visible_range.end_ns - window.visible_range.start_ns;
+        }
+    } catch (const std::exception&) {
+    }
+    return kInitialWindowWidthNs;
+}
+
 data::CandleWindowRequest makeWindowRequest(
     chart::ChartWorkspaceWidget& workspace,
     std::uint64_t chart_id,
@@ -203,16 +221,7 @@ data::ScheduleSubmitStatus DataLoadController::load_file_async(
 
     const auto visible_range = initialVisibleRange(dataset_info_.tick_range);
     auto first_status = data::ScheduleSubmitStatus::Scheduled;
-    auto first_request = true;
-    const auto chart_ids = workspace.enabled_chart_ids();
-    for (const auto chart_id : chart_ids) {
-        auto request = makeWindowRequest(workspace, chart_id, visible_range, requested_period_);
-        const auto status = submit_window_async(std::move(request), workspace, receiver, callback);
-        if (first_request) {
-            first_status = status;
-            first_request = false;
-        }
-    }
+    first_status = request_all_enabled_windows_async(visible_range, workspace, receiver, std::move(callback));
     return first_status;
 }
 
@@ -248,6 +257,92 @@ data::ScheduleSubmitStatus DataLoadController::request_window_async(
 
     auto request = makeWindowRequest(workspace, chart_id, visible_range, requested_period_);
     return submit_window_async(std::move(request), workspace, receiver, std::move(callback));
+}
+
+data::ScheduleSubmitStatus DataLoadController::reset_view_async(
+    chart::ChartWorkspaceWidget& workspace,
+    QObject* receiver,
+    LoadCallback callback)
+{
+    if (receiver == nullptr) {
+        throw std::invalid_argument("reset_view_async requires a QObject receiver");
+    }
+    if (dataset_path_.empty()) {
+        throw std::runtime_error("no dataset loaded");
+    }
+
+    return request_all_enabled_windows_async(initialVisibleRange(dataset_info_.tick_range), workspace, receiver, std::move(callback));
+}
+
+data::ScheduleSubmitStatus DataLoadController::jump_to_time_async(
+    std::int64_t target_time_ns,
+    chart::ChartWorkspaceWidget& workspace,
+    QObject* receiver,
+    LoadCallback callback)
+{
+    if (receiver == nullptr) {
+        throw std::invalid_argument("jump_to_time_async requires a QObject receiver");
+    }
+    if (dataset_path_.empty()) {
+        throw std::runtime_error("no dataset loaded");
+    }
+
+    const auto target = clamp_jump_timestamp_ns(
+        normalize_jump_timestamp_ns(target_time_ns),
+        dataset_info_.tick_range);
+    const auto visible_range = centered_visible_range(
+        target,
+        dataset_info_.tick_range,
+        activeVisibleWidthNs(workspace));
+
+    if (replay_session_->enabled()) {
+        configure_replay(workspace, target);
+        replay_session_->set_enabled(true);
+    }
+
+    return request_all_enabled_windows_async(visible_range, workspace, receiver, std::move(callback));
+}
+
+data::ScheduleSubmitStatus DataLoadController::step_time_async(
+    std::int64_t delta_ns,
+    chart::ChartWorkspaceWidget& workspace,
+    QObject* receiver,
+    LoadCallback callback)
+{
+    return jump_to_time_async(current_view_center_time_ns(workspace) + delta_ns, workspace, receiver, std::move(callback));
+}
+
+bool DataLoadController::dataset_loaded() const
+{
+    return !dataset_path_.empty();
+}
+
+const data::DataSetInfo& DataLoadController::dataset_info() const
+{
+    return dataset_info_;
+}
+
+const std::string& DataLoadController::dataset_path() const
+{
+    return dataset_path_;
+}
+
+std::int64_t DataLoadController::current_view_center_time_ns(const chart::ChartWorkspaceWidget& workspace) const
+{
+    if (dataset_path_.empty()) {
+        throw std::runtime_error("no dataset loaded");
+    }
+
+    try {
+        const auto& window = workspace.chart_view(workspace.active_chart_id()).scene_model().window();
+        if (window.has_visible_range() && window.visible_range.end_ns > window.visible_range.start_ns) {
+            return normalize_jump_timestamp_ns(
+                clamp_jump_timestamp_ns(midpoint(window.visible_range), dataset_info_.tick_range));
+        }
+    } catch (const std::exception&) {
+    }
+
+    return normalize_jump_timestamp_ns(midpoint(dataset_info_.tick_range));
 }
 
 void DataLoadController::set_replay_enabled(bool enabled, chart::ChartWorkspaceWidget& workspace)
@@ -332,6 +427,26 @@ data::ScheduleSubmitStatus DataLoadController::submit_window_async(
                 callback(std::move(load_result));
             }
         });
+}
+
+data::ScheduleSubmitStatus DataLoadController::request_all_enabled_windows_async(
+    core::TimeRange visible_range,
+    chart::ChartWorkspaceWidget& workspace,
+    QObject* receiver,
+    LoadCallback callback)
+{
+    auto first_status = data::ScheduleSubmitStatus::Scheduled;
+    auto first_request = true;
+    const auto chart_ids = workspace.enabled_chart_ids();
+    for (const auto chart_id : chart_ids) {
+        auto request = makeWindowRequest(workspace, chart_id, visible_range, requested_period_);
+        const auto status = submit_window_async(std::move(request), workspace, receiver, callback);
+        if (first_request) {
+            first_status = status;
+            first_request = false;
+        }
+    }
+    return first_status;
 }
 
 void DataLoadController::configure_replay(chart::ChartWorkspaceWidget& workspace, std::int64_t start_time_ns)

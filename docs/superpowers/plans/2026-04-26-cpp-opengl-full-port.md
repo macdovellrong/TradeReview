@@ -335,12 +335,12 @@
 - Create: `native/tests/app/test_session_state.cpp`
 - Modify: `native/tests/CMakeLists.txt`
 
-- [ ] Normalize jump timestamps to minute precision.
-- [ ] Clamp jumps to loaded dataset range.
-- [ ] Resolve target chart row from right-side bar behavior.
-- [ ] Save and restore dataset path, center time, chart count, layout, and periods.
-- [ ] Static verification: `rg -n "SessionState|TimeNavigation|clamp|Save View|Reset View|QSettings" native`.
-- [ ] Commit with message: `移植C++时间导航和会话状态`.
+- [x] Normalize jump timestamps to minute precision.
+- [x] Clamp jumps to loaded dataset range.
+- [x] Resolve target chart row from right-side bar behavior.
+- [x] Save and restore dataset path, center time, chart count, layout, and periods.
+- [x] Static verification: `rg -n "SessionState|TimeNavigation|clamp|Save View|Reset View|QSettings" native`.
+- [x] Commit with message: `移植C++时间导航和会话状态`.
 
 ### Task 14: Error Handling and Product Polish
 
@@ -632,3 +632,24 @@
 - No native exe was launched.
 - Known follow-up: replay currently rebuilds forward from the seek point and does not warm up historical indicator values; moving replay chunk requests behind a scheduler-style service remains a future robustness improvement.
 - Next task: Task 13, time navigation and session state.
+
+### 2026-04-26 Task 13 Completed
+
+- Added `TimeNavigation` helpers for minute-precision jump normalization, dataset-range clamping, right-side target-row resolution, and centered visible-range calculation.
+- Added `SessionState` persistence through `QSettings` for dataset path, center time, chart count, layout mode, and per-chart periods.
+- Wired `Reset View`, `Save View`, date-time jump, and replay-disabled back/forward stepping through `MainControlsBar`, `MainWindow`, `DataLoadController`, and `ChartWorkspaceWidget`.
+- Restore-on-start now reloads a saved dataset when the file still exists, reapplies chart count/layout/periods, jumps to the saved center time, and syncs charts to the resolved target row.
+- Added app-level native tests for jump normalization/clamping, target-row selection, centered range clamping, session save/load, invalid state rejection, chart-count clamping, and default period fill-in.
+- Verified RED first:
+  - OFF test build failed before implementation on missing `tradereview/app/TimeNavigation.h`;
+  - OFF test build failed before implementation on missing `tradereview/app/SessionState.h`.
+- Verified with `C:\Build\TradeReview-native-task11-off-msvc` using DuckDB OFF:
+  - full Debug build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task11-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Verified with `C:\Build\TradeReview-native-task11-on-msvc` using DuckDB ON:
+  - full Debug build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task11-on-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Static verification: `rg -n "SessionState|TimeNavigation|clamp|Save View|Reset View|QSettings" native --glob '!native/build/**' --glob '!native-build*/**'`.
+- `git diff --check` exited 0 with only LF-to-CRLF notices.
+- No native exe was launched.
+- Next task: Task 14, error handling and product polish.

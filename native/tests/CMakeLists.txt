@@ -1,4 +1,6 @@
 add_executable(tradereview_native_tests
+    app/test_session_state.cpp
+    app/test_time_navigation.cpp
     chart/test_chart_index_mapper.cpp
     chart/test_chart_interaction.cpp
     chart/test_chart_scene_model.cpp
@@ -30,6 +32,7 @@ add_executable(tradereview_native_tests
 
 target_link_libraries(tradereview_native_tests
     PRIVATE
+        tradereview_app_logic
         tradereview_core
         tradereview_data
         tradereview_chart
