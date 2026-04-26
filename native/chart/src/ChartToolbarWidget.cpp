@@ -16,11 +16,6 @@ namespace {
 
 constexpr int kButtonHeight = 30;
 
-QString placeholderMessage(const QString& action)
-{
-    return action + " is not wired yet";
-}
-
 QPushButton* createToolbarButton(QWidget* parent, const QString& text, int width)
 {
     auto* button = new QPushButton(text, parent);
@@ -108,8 +103,8 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
         button->setCheckable(true);
         button->setChecked(isDefaultSelectedEma(label));
         indicatorGroup->addButton(button);
-        connect(button, &QPushButton::toggled, this, [this, label](bool) {
-            notify(label);
+        connect(button, &QPushButton::toggled, this, [this, label](bool checked) {
+            notify_indicator_toggle(label, checked);
         });
         toolbarLayout->addWidget(button);
     }
@@ -119,8 +114,8 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
         button->setCheckable(true);
         button->setChecked(true);
         indicatorGroup->addButton(button);
-        connect(button, &QPushButton::toggled, this, [this, label](bool) {
-            notify(label);
+        connect(button, &QPushButton::toggled, this, [this, label](bool checked) {
+            notify_indicator_toggle(label, checked);
         });
         toolbarLayout->addWidget(button);
     }
@@ -144,10 +139,22 @@ void ChartToolbarWidget::setStatusCallback(StatusCallback callback)
     status_callback_ = std::move(callback);
 }
 
+void ChartToolbarWidget::setIndicatorToggleCallback(IndicatorToggleCallback callback)
+{
+    indicator_toggle_callback_ = std::move(callback);
+}
+
 void ChartToolbarWidget::notify(const QString& action) const
 {
     if (status_callback_) {
-        status_callback_(placeholderMessage(action));
+        status_callback_(action + " is not wired yet");
+    }
+}
+
+void ChartToolbarWidget::notify_indicator_toggle(const QString& indicator, bool enabled) const
+{
+    if (indicator_toggle_callback_) {
+        indicator_toggle_callback_(indicator, enabled);
     }
 }
 

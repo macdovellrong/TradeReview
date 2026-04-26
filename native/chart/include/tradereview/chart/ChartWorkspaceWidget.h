@@ -2,6 +2,9 @@
 
 #include <QWidget>
 
+#include <string>
+#include <vector>
+
 #include "tradereview/chart/ChartToolbarWidget.h"
 #include "tradereview/data/CandleWindow.h"
 
@@ -17,6 +20,7 @@ public:
     bool apply_window(data::CandleWindow window);
     [[nodiscard]] ChartViewWidget& chart_view();
     [[nodiscard]] const ChartViewWidget& chart_view() const;
+    [[nodiscard]] std::vector<std::string> requested_indicators() const;
 
 private:
     ChartToolbarWidget* toolbar_;

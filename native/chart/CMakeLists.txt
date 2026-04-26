@@ -6,10 +6,13 @@ add_library(tradereview_chart STATIC
     src/ChartInteractionController.cpp
     src/ChartIndexMapper.cpp
     src/LodResolver.cpp
+    src/PaneLayout.cpp
     src/Windowing.cpp
     rendering/src/CandleLayer.cpp
     rendering/src/GLResources.cpp
     rendering/src/GLChartRenderer.cpp
+    rendering/src/HistogramLayer.cpp
+    rendering/src/IndicatorLayer.cpp
 )
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)

@@ -44,13 +44,18 @@ void main()
         std::isfinite(window.close[row]);
 }
 
-[[nodiscard]] float normalized_y(double value, double min_value, double max_value)
+[[nodiscard]] PaneRect full_pane()
+{
+    return {-1.0F, 1.0F, -1.0F, 1.0F};
+}
+
+[[nodiscard]] float mapped_y(double value, double min_value, double max_value, PaneRect pane)
 {
     if (max_value <= min_value) {
-        return 0.0F;
+        return pane.bottom + pane.height() * 0.5F;
     }
     const auto normalized = (value - min_value) / (max_value - min_value);
-    return static_cast<float>((normalized * 2.0) - 1.0);
+    return pane.bottom + static_cast<float>(normalized) * pane.height();
 }
 
 [[nodiscard]] DenseRange normalized_visible_range(DenseRange range)
@@ -83,17 +88,17 @@ void main()
     return true;
 }
 
-[[nodiscard]] float candle_center_x(std::size_t row, DenseRange visible_dense_range)
+[[nodiscard]] float candle_center_x(std::size_t row, DenseRange visible_dense_range, PaneRect pane)
 {
     const auto span = std::max(visible_dense_range.span(), 1.0);
     const auto normalized = (static_cast<double>(row) - visible_dense_range.start_x) / span;
-    return static_cast<float>((normalized * 2.0) - 1.0);
+    return pane.left + static_cast<float>(normalized) * pane.width();
 }
 
-[[nodiscard]] float candle_half_width(DenseRange visible_dense_range)
+[[nodiscard]] float candle_half_width(DenseRange visible_dense_range, PaneRect pane)
 {
     const auto span = static_cast<float>(std::max(visible_dense_range.span(), 1.0));
-    return std::min(0.32F, 0.35F * (2.0F / span));
+    return std::min(0.32F, 0.35F * (pane.width() / span));
 }
 
 void append_body(
@@ -145,13 +150,16 @@ void append_line(std::vector<CandleVertex>& vertices, float start_x, float start
     vertices.push_back(color);
 }
 
-void append_grid(std::vector<CandleVertex>& vertices)
+void append_grid(std::vector<CandleVertex>& vertices, PaneRect pane)
 {
     constexpr float kGridLines[] = {-0.6F, -0.2F, 0.2F, 0.6F};
     vertices.reserve(std::size(kGridLines) * 4);
     for (const float value : kGridLines) {
-        append_line(vertices, -1.0F, value, 1.0F, value);
-        append_line(vertices, value, -1.0F, value, 1.0F);
+        const auto normalized = (value + 1.0F) * 0.5F;
+        const auto y = pane.bottom + normalized * pane.height();
+        const auto x = pane.left + normalized * pane.width();
+        append_line(vertices, pane.left, y, pane.right, y);
+        append_line(vertices, x, pane.bottom, x, pane.top);
     }
 }
 
@@ -167,10 +175,15 @@ CandleGeometry build_candle_geometry(const data::CandleWindow& window)
     if (window.empty()) {
         return CandleGeometry{window.generation};
     }
-    return build_candle_geometry(window, DenseRange{0.0, static_cast<double>(window.row_count() - 1)});
+    return build_candle_geometry(window, DenseRange{0.0, static_cast<double>(window.row_count() - 1)}, full_pane());
 }
 
 CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRange visible_dense_range)
+{
+    return build_candle_geometry(window, visible_dense_range, full_pane());
+}
+
+CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRange visible_dense_range, PaneRect pane)
 {
     CandleGeometry geometry;
     geometry.generation = window.generation;
@@ -183,7 +196,7 @@ CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRang
     std::size_t first_row = 0;
     std::size_t last_row = 0;
     if (!visible_row_bounds(range, rows, first_row, last_row)) {
-        append_grid(geometry.grid_vertices);
+        append_grid(geometry.grid_vertices, pane);
         return geometry;
     }
 
@@ -204,8 +217,8 @@ CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRang
         max_price = min_price + 1.0;
     }
 
-    append_grid(geometry.grid_vertices);
-    const auto half_width = candle_half_width(range);
+    append_grid(geometry.grid_vertices, pane);
+    const auto half_width = candle_half_width(range, pane);
     geometry.body_vertices.reserve((last_row - first_row + 1) * 6);
     geometry.wick_vertices.reserve((last_row - first_row + 1) * 2);
     for (std::size_t row = first_row; row <= last_row; ++row) {
@@ -213,18 +226,18 @@ CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRang
             continue;
         }
 
-        const auto center_x = candle_center_x(row, range);
-        const auto left = std::clamp(center_x - half_width, -1.0F, 1.0F);
-        const auto right = std::clamp(center_x + half_width, -1.0F, 1.0F);
-        const auto open_y = normalized_y(window.open[row], min_price, max_price);
-        const auto close_y = normalized_y(window.close[row], min_price, max_price);
-        const auto high_y = normalized_y(window.high[row], min_price, max_price);
-        const auto low_y = normalized_y(window.low[row], min_price, max_price);
+        const auto center_x = candle_center_x(row, range, pane);
+        const auto left = std::clamp(center_x - half_width, pane.left, pane.right);
+        const auto right = std::clamp(center_x + half_width, pane.left, pane.right);
+        const auto open_y = mapped_y(window.open[row], min_price, max_price, pane);
+        const auto close_y = mapped_y(window.close[row], min_price, max_price, pane);
+        const auto high_y = mapped_y(window.high[row], min_price, max_price, pane);
+        const auto low_y = mapped_y(window.low[row], min_price, max_price, pane);
         auto top = std::max(open_y, close_y);
         auto bottom = std::min(open_y, close_y);
         if (top - bottom < kMinimumBodyHeight) {
             const auto middle = (top + bottom) * 0.5F;
-            bottom = std::clamp(middle - (kMinimumBodyHeight * 0.5F), -1.0F, 1.0F - kMinimumBodyHeight);
+            bottom = std::clamp(middle - (kMinimumBodyHeight * 0.5F), pane.bottom, pane.top - kMinimumBodyHeight);
             top = bottom + kMinimumBodyHeight;
         }
         const auto color = window.close[row] >= window.open[row] ? kUpColor : kDownColor;
@@ -264,16 +277,17 @@ void CandleLayer::release(QOpenGLFunctions_3_3_Core& gl)
 
 void CandleLayer::upload(
     QOpenGLFunctions_3_3_Core& gl,
-    const data::CandleWindow& window,
-    DenseRange visible_dense_range,
-    std::uint64_t window_revision)
+        const data::CandleWindow& window,
+        DenseRange visible_dense_range,
+        PaneRect pane,
+        std::uint64_t window_revision)
 {
     if (uploaded_generation_ == window.generation && uploaded_revision_ == window_revision) {
         return;
     }
 
     initialize(gl);
-    const auto geometry = build_candle_geometry(window, visible_dense_range);
+    const auto geometry = build_candle_geometry(window, visible_dense_range, pane);
     upload_vertices(gl, grid_vertex_array_, grid_buffer_, geometry.grid_vertices);
     upload_vertices(gl, body_vertex_array_, body_buffer_, geometry.body_vertices);
     upload_vertices(gl, wick_vertex_array_, wick_buffer_, geometry.wick_vertices);

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "tradereview/chart/ChartSceneModel.h"
+#include "tradereview/chart/rendering/HistogramLayer.h"
+#include "tradereview/chart/rendering/IndicatorLayer.h"
 #include "tradereview/chart/rendering/CandleLayer.h"
 
 namespace tradereview::chart::rendering {
@@ -14,6 +16,8 @@ public:
 
 private:
     CandleLayer candle_layer_;
+    IndicatorLayer indicator_layer_;
+    HistogramLayer histogram_layer_;
     bool initialized_ = false;
 };
 

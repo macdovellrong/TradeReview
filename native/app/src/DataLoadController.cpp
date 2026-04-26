@@ -93,6 +93,7 @@ data::CandleWindowRequest makeWindowRequest(
     request.requested_period = requested_period;
     request.visible_range = visible_range;
     request.pixel_width = chartPixelWidth(workspace);
+    request.requested_indicators = workspace.requested_indicators();
     return request;
 }
 

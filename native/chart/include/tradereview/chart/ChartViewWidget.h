@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
+#include <vector>
 
 #include <QPointF>
 #include <QOpenGLWidget>
@@ -26,6 +28,10 @@ public:
 
     std::uint64_t bump_generation();
     bool apply_window(data::CandleWindow window);
+    bool set_indicator_enabled(const std::string& indicator_name, bool enabled);
+    bool set_bollinger_bands_enabled(bool enabled);
+    bool set_indicator_panels_enabled(bool enabled);
+    [[nodiscard]] std::vector<std::string> requested_indicators() const;
     void set_reload_request_callback(ReloadRequestCallback callback);
     [[nodiscard]] const ChartSceneModel& scene_model() const;
 
@@ -39,6 +45,7 @@ private:
     void wheelEvent(QWheelEvent* event) override;
     void release_renderer();
     void apply_interaction_update();
+    void request_current_visible_window();
 
     ChartSceneModel scene_model_;
     ChartInteractionController interaction_;

@@ -52,6 +52,47 @@ bool ChartViewWidget::apply_window(data::CandleWindow window)
     return true;
 }
 
+bool ChartViewWidget::set_indicator_enabled(const std::string& indicator_name, bool enabled)
+{
+    if (!scene_model_.set_indicator_enabled(indicator_name, enabled)) {
+        return false;
+    }
+    update();
+    if (enabled) {
+        request_current_visible_window();
+    }
+    return true;
+}
+
+bool ChartViewWidget::set_bollinger_bands_enabled(bool enabled)
+{
+    if (!scene_model_.set_bollinger_bands_enabled(enabled)) {
+        return false;
+    }
+    update();
+    if (enabled) {
+        request_current_visible_window();
+    }
+    return true;
+}
+
+bool ChartViewWidget::set_indicator_panels_enabled(bool enabled)
+{
+    if (!scene_model_.set_indicator_panels_enabled(enabled)) {
+        return false;
+    }
+    update();
+    if (enabled) {
+        request_current_visible_window();
+    }
+    return true;
+}
+
+std::vector<std::string> ChartViewWidget::requested_indicators() const
+{
+    return scene_model_.requested_indicators();
+}
+
 void ChartViewWidget::set_reload_request_callback(ReloadRequestCallback callback)
 {
     reload_request_callback_ = std::move(callback);
@@ -155,6 +196,22 @@ void ChartViewWidget::apply_interaction_update()
     if (range_changed) {
         update();
     }
+}
+
+void ChartViewWidget::request_current_visible_window()
+{
+    if (!reload_request_callback_ || scene_model_.index_mapper().empty()) {
+        return;
+    }
+
+    const auto visible_range = interaction_.visible_time_range(scene_model_.index_mapper());
+    if (visible_range.end_ns <= visible_range.start_ns) {
+        return;
+    }
+
+    reload_request_callback_(visible_range);
+    has_last_reload_request_ = true;
+    last_reload_request_ = visible_range;
 }
 
 } // namespace tradereview::chart

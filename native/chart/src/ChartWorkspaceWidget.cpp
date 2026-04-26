@@ -2,9 +2,12 @@
 
 #include "tradereview/chart/ChartViewWidget.h"
 
+#include <QString>
 #include <QVBoxLayout>
 
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace tradereview::chart {
 
@@ -18,6 +21,22 @@ ChartWorkspaceWidget::ChartWorkspaceWidget(QWidget* parent)
     layout->setSpacing(0);
     layout->addWidget(toolbar_);
     layout->addWidget(chart_view_, 1);
+
+    toolbar_->setIndicatorToggleCallback([this](const QString& indicator, bool enabled) {
+        if (indicator == "BB") {
+            chart_view_->set_bollinger_bands_enabled(enabled);
+            return;
+        }
+        if (indicator == "MACD/RSI") {
+            chart_view_->set_indicator_panels_enabled(enabled);
+            return;
+        }
+
+        const auto utf8 = indicator.toUtf8();
+        chart_view_->set_indicator_enabled(
+            std::string{utf8.constData(), static_cast<std::size_t>(utf8.size())},
+            enabled);
+    });
 }
 
 void ChartWorkspaceWidget::setStatusCallback(ChartToolbarWidget::StatusCallback callback)
@@ -38,6 +57,11 @@ ChartViewWidget& ChartWorkspaceWidget::chart_view()
 const ChartViewWidget& ChartWorkspaceWidget::chart_view() const
 {
     return *chart_view_;
+}
+
+std::vector<std::string> ChartWorkspaceWidget::requested_indicators() const
+{
+    return chart_view_->requested_indicators();
 }
 
 } // namespace tradereview::chart

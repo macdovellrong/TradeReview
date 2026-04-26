@@ -200,12 +200,12 @@
 - Modify: `native/chart/src/ChartToolbarWidget.cpp`
 - Modify: `native/chart/rendering/src/GLChartRenderer.cpp`
 
-- [ ] Add pane rectangles for price, MACD, and RSI.
-- [ ] Draw EMA and BB using price pane scale.
-- [ ] Draw MACD lines/histogram and RSI line in separate panes with independent Y scaling.
-- [ ] Connect toolbar indicator toggles to scene state rather than placeholders.
-- [ ] Static verification: `rg -n "PaneLayout|IndicatorLayer|HistogramLayer|MACD|RSI|EMA20|BB" native/chart`.
-- [ ] Commit with message: `实现C++指标图层和窗格`.
+- [x] Add pane rectangles for price, MACD, and RSI.
+- [x] Draw EMA and BB using price pane scale.
+- [x] Draw MACD lines/histogram and RSI line in separate panes with independent Y scaling.
+- [x] Connect toolbar indicator toggles to scene state rather than placeholders.
+- [x] Static verification: `rg -n "PaneLayout|IndicatorLayer|HistogramLayer|MACD|RSI|EMA20|BB" native/chart`.
+- [x] Commit with message: `实现C++指标图层和窗格`.
 
 ### Task 8: Multi-Chart Workspace and Layouts
 
@@ -495,3 +495,23 @@
 - `git diff --check` exited 0 with only LF-to-CRLF notices.
 - No native exe was launched.
 - Next task: Task 7, indicator columns and panels.
+
+### 2026-04-26 Task 7 Completed
+
+- Added pane layout support for a price pane plus MACD and RSI indicator panes.
+- Added price overlay and panel indicator geometry for EMA, Bollinger Bands, MACD, MACD signal, RSI, and MACD histogram bars.
+- Wired `GLChartRenderer` to render candles in the price pane, draw EMA/BB against price scaling, and draw MACD/RSI with independent panel scaling.
+- Connected toolbar EMA/BB/MACD-RSI toggles to `ChartSceneModel` state, forwarded the selected indicator columns into `CandleWindowRequest`, and request a current-window reload when enabling indicator columns that may not be loaded yet.
+- Added native tests for pane layout, indicator line geometry, histogram geometry, and scene-model indicator request state.
+- Verified with `C:\Build\TradeReview-native-task7-off-msvc` using DuckDB OFF:
+  - configure exited 0;
+  - `cmake --build C:\Build\TradeReview-native-task7-off-msvc --target tradereview_native_tests --config Debug` exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task7-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`;
+  - `cmake --build C:\Build\TradeReview-native-task7-off-msvc --target tradereview_native --config Debug` exited 0.
+- Verified with `C:\Build\TradeReview-native-task7-msvc` using DuckDB ON:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task7-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Static verification: `rg -n "PaneLayout|IndicatorLayer|HistogramLayer|MACD|RSI|EMA20|BB" native/chart`.
+- No native exe was launched.
+- Next task: Task 8, multi-chart workspace and layouts.

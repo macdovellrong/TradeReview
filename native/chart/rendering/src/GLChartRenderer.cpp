@@ -1,8 +1,14 @@
 #include "tradereview/chart/rendering/GLChartRenderer.h"
 
+#include "tradereview/chart/PaneLayout.h"
+#include "tradereview/data/IndicatorColumns.h"
+
 #include <QOpenGLContext>
 #include <QOpenGLFunctions_3_3_Core>
 #include <QOpenGLVersionFunctionsFactory>
+
+#include <string>
+#include <vector>
 
 namespace tradereview::chart::rendering {
 
@@ -49,6 +55,8 @@ void GLChartRenderer::release()
     }
 
     candle_layer_.release(*functions);
+    indicator_layer_.release(*functions);
+    histogram_layer_.release(*functions);
     initialized_ = false;
 }
 
@@ -76,8 +84,47 @@ void GLChartRenderer::render(const ChartSceneModel& scene_model)
     }
 
     functions->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    candle_layer_.upload(*functions, scene_model.window(), scene_model.visible_dense_range(), scene_model.revision());
+    const auto layout = build_pane_layout(scene_model.indicator_panels_enabled());
+    candle_layer_.upload(*functions, scene_model.window(), scene_model.visible_dense_range(), layout.price, scene_model.revision());
     candle_layer_.render(*functions);
+
+    IndicatorGeometry indicators = build_price_indicator_geometry(
+        scene_model.window(),
+        scene_model.visible_dense_range(),
+        layout.price,
+        scene_model.enabled_price_indicators());
+
+    if (layout.macd_visible) {
+        auto macd_lines = build_panel_indicator_geometry(
+            scene_model.window(),
+            scene_model.visible_dense_range(),
+            layout.macd,
+            {
+                std::string{data::IndicatorColumns::MACD},
+                std::string{data::IndicatorColumns::MACD_Signal},
+            });
+        indicators.vertices.insert(indicators.vertices.end(), macd_lines.vertices.begin(), macd_lines.vertices.end());
+
+        const auto histogram = build_histogram_geometry(
+            scene_model.window(),
+            scene_model.visible_dense_range(),
+            layout.macd,
+            std::string{data::IndicatorColumns::MACD_Hist});
+        histogram_layer_.upload(*functions, histogram, scene_model.revision());
+        histogram_layer_.render(*functions);
+    }
+
+    if (layout.rsi_visible) {
+        auto rsi_lines = build_panel_indicator_geometry(
+            scene_model.window(),
+            scene_model.visible_dense_range(),
+            layout.rsi,
+            {std::string{data::IndicatorColumns::RSI}});
+        indicators.vertices.insert(indicators.vertices.end(), rsi_lines.vertices.begin(), rsi_lines.vertices.end());
+    }
+
+    indicator_layer_.upload(*functions, indicators, scene_model.revision());
+    indicator_layer_.render(*functions);
 }
 
 } // namespace tradereview::chart::rendering

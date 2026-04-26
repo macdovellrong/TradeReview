@@ -1,12 +1,15 @@
 #include "tradereview/chart/ChartSceneModel.h"
 #include "tradereview/core/Assertions.h"
 #include "tradereview/data/CandleWindow.h"
+#include "tradereview/data/IndicatorColumns.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace tradereview::tests {
 void register_test(std::string name, std::function<void()> run);
@@ -97,6 +100,40 @@ void test_scene_model_rejects_inconsistent_columns()
     tradereview::core::assert_equal(model.row_count(), std::size_t{0}, "scene model row count remains empty");
 }
 
+bool contains(const std::vector<std::string>& values, std::string_view target)
+{
+    for (const auto& value : values) {
+        if (value == target) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void test_scene_model_tracks_indicator_visibility_and_requested_columns()
+{
+    tradereview::chart::ChartSceneModel model;
+
+    auto requested = model.requested_indicators();
+    tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::EMA20), "EMA20 requested by default");
+    tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::BB_Upper), "BB upper requested by default");
+    tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::MACD_Hist), "MACD histogram requested by default");
+    tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::RSI), "RSI requested by default");
+    tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::EMA100), "EMA100 disabled by default");
+
+    const auto revision_before = model.revision();
+    tradereview::core::assert_true(model.set_indicator_enabled("EMA100", true), "EMA100 can be enabled");
+    tradereview::core::assert_true(model.set_bollinger_bands_enabled(false), "BB can be disabled");
+    tradereview::core::assert_true(model.set_indicator_panels_enabled(false), "indicator panels can be disabled");
+
+    requested = model.requested_indicators();
+    tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::EMA100), "EMA100 requested when enabled");
+    tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::BB_Upper), "BB upper not requested when disabled");
+    tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::MACD), "MACD not requested when panels disabled");
+    tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::RSI), "RSI not requested when panels disabled");
+    tradereview::core::assert_equal(model.revision(), revision_before + 3, "indicator changes increment revision");
+}
+
 struct RegisterChartSceneModelTests {
     RegisterChartSceneModelTests()
     {
@@ -115,6 +152,9 @@ struct RegisterChartSceneModelTests {
         tradereview::tests::register_test(
             "scene model rejects inconsistent columns",
             test_scene_model_rejects_inconsistent_columns);
+        tradereview::tests::register_test(
+            "scene model tracks indicator visibility and requested columns",
+            test_scene_model_tracks_indicator_visibility_and_requested_columns);
     }
 };
 
