@@ -369,11 +369,11 @@
 - Create: `docs/native-manual-verification.md`
 - Modify: this plan file
 
-- [ ] Document manual CMake configure/build/run steps for Qt Creator and PowerShell.
-- [ ] Document small-data smoke scenarios: open dataset, single chart, four charts, period switch, pan/zoom, indicators, drawing, replay, session restore.
-- [ ] Document expected performance behavior: small pan no reload, edge pan prefetch/reload, large jump reload, LOD on wide ranges.
-- [ ] Static verification: `rg -n "manual|smoke|pan|LOD|replay|session" docs/native-manual-verification.md`.
-- [ ] Commit with message: `补充C++手动验收清单`.
+- [x] Document manual CMake configure/build/run steps for Qt Creator and PowerShell.
+- [x] Document small-data smoke scenarios: open dataset, single chart, four charts, period switch, pan/zoom, indicators, drawing, replay, session restore.
+- [x] Document expected performance behavior: small pan no reload, edge pan prefetch/reload, large jump reload, LOD on wide ranges.
+- [x] Static verification: `rg -n "manual|smoke|pan|LOD|replay|session" docs/native-manual-verification.md`.
+- [x] Commit with message: `补充C++手动验收清单`.
 
 ---
 
@@ -675,3 +675,14 @@
 - `git diff --check` exited 0 with only LF-to-CRLF notices.
 - No native exe was launched.
 - Next task: Task 15, verification checklist and manual build notes.
+
+### 2026-04-26 Task 15 Completed
+
+- Added `docs/native-manual-verification.md` with manual Qt Creator and PowerShell build/run instructions for the native C++ app.
+- Documented DuckDB ON configuration, explicit DuckDB include/library/DLL fallback values, and stale CMake cache avoidance.
+- Added small-data smoke checks for dataset loading, single/four-chart layouts, period switching, pan/zoom, indicators, drawings, replay, date jump, session restore, and error handling.
+- Added expected performance behavior for small pan, edge pan prefetch/reload, large jump reload, LOD on wide ranges, multi-chart partial failures, and replay chunking.
+- Static verification: `rg -n "manual|smoke|pan|LOD|replay|session" docs/native-manual-verification.md`.
+- `git diff --check` exited 0 with only LF-to-CRLF notices.
+- Per `AGENTS.md`, no native build or native exe run was performed for this docs-only task.
+- All planned C++ native port tasks are now documented as complete; next step is user manual verification and then branch integration when requested.
