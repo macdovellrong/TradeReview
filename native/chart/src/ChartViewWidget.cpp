@@ -9,6 +9,11 @@ ChartViewWidget::ChartViewWidget(QWidget* parent)
 {
 }
 
+std::uint64_t ChartViewWidget::bump_generation()
+{
+    return scene_model_.bump_generation();
+}
+
 void ChartViewWidget::apply_window(data::CandleWindow window)
 {
     if (scene_model_.apply_window(std::move(window))) {

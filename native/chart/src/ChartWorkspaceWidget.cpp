@@ -25,6 +25,11 @@ void ChartWorkspaceWidget::setStatusCallback(ChartToolbarWidget::StatusCallback 
     toolbar_->setStatusCallback(std::move(callback));
 }
 
+void ChartWorkspaceWidget::apply_window(data::CandleWindow window)
+{
+    chart_view_->apply_window(std::move(window));
+}
+
 ChartViewWidget& ChartWorkspaceWidget::chart_view()
 {
     return *chart_view_;

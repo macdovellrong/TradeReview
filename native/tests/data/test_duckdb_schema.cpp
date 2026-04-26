@@ -54,6 +54,30 @@ void test_duckdb_schema_maps_period_aliases_to_existing_tables()
         "month candle table");
 }
 
+void test_duckdb_schema_maps_candle_tables_to_python_periods()
+{
+    tradereview::core::assert_equal(
+        tradereview::data::duckdb_period_for_candle_table("candles_1m"),
+        std::string{"1min"},
+        "1m table period");
+    tradereview::core::assert_equal(
+        tradereview::data::duckdb_period_for_candle_table("candles_5m"),
+        std::string{"5min"},
+        "5m table period");
+    tradereview::core::assert_equal(
+        tradereview::data::duckdb_period_for_candle_table("candles_1mo"),
+        std::string{"1M"},
+        "1mo table period");
+    tradereview::core::assert_equal(
+        tradereview::data::duckdb_period_for_candle_table("candles_1h"),
+        std::string{"1h"},
+        "1h table period");
+    tradereview::core::assert_equal(
+        tradereview::data::duckdb_period_for_candle_table("candles_1D"),
+        std::string{"1D"},
+        "1D table period");
+}
+
 void test_duckdb_schema_validates_ticks_columns()
 {
     const auto result = tradereview::data::validate_ticks_schema(ticks_schema());
@@ -200,6 +224,9 @@ struct RegisterDuckDbSchemaTests {
             "duckdb schema maps period aliases to existing tables",
             test_duckdb_schema_maps_period_aliases_to_existing_tables);
         tradereview::tests::register_test(
+            "duckdb schema maps candle tables to python periods",
+            test_duckdb_schema_maps_candle_tables_to_python_periods);
+        tradereview::tests::register_test(
             "duckdb schema validates ticks columns",
             test_duckdb_schema_validates_ticks_columns);
         tradereview::tests::register_test(
@@ -223,9 +250,11 @@ struct RegisterDuckDbSchemaTests {
         tradereview::tests::register_test(
             "duckdb schema allows gap row columns when requested",
             test_duckdb_schema_allows_gap_row_columns_when_requested);
+#if !defined(TRADEREVIEW_NATIVE_WITH_DUCKDB)
         tradereview::tests::register_test(
             "duckdb repository reports unavailable when duckdb is disabled",
             test_duckdb_repository_reports_unavailable_when_duckdb_is_disabled);
+#endif
     }
 };
 

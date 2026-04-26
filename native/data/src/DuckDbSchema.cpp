@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <cctype>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
 #include "tradereview/core/Period.h"
+#include "tradereview/data/IndicatorColumns.h"
 
 namespace tradereview::data {
 namespace {
@@ -76,6 +78,23 @@ std::string duckdb_candle_table_for_period(std::string_view period)
     return core::duckdb_candle_table(period);
 }
 
+std::string duckdb_period_for_candle_table(std::string_view table_name)
+{
+    constexpr std::string_view prefix = "candles_";
+    if (!table_name.starts_with(prefix) || table_name.size() == prefix.size()) {
+        throw std::invalid_argument("invalid candle table name");
+    }
+
+    const auto suffix = table_name.substr(prefix.size());
+    if (suffix.ends_with("mo")) {
+        return std::string{suffix.substr(0, suffix.size() - 2)} + "M";
+    }
+    if (suffix.ends_with("m")) {
+        return std::string{suffix.substr(0, suffix.size() - 1)} + "min";
+    }
+    return std::string{suffix};
+}
+
 bool has_column(const TableSchema& schema, std::string_view name)
 {
     return std::any_of(
@@ -84,6 +103,17 @@ bool has_column(const TableSchema& schema, std::string_view name)
         [name](const ColumnInfo& column) {
             return ascii_equal_case_insensitive(column.name, name);
         });
+}
+
+std::vector<std::string> canonical_indicator_columns_present(const TableSchema& schema)
+{
+    std::vector<std::string> indicators;
+    for (const auto indicator : IndicatorColumns::all()) {
+        if (has_column(schema, indicator)) {
+            indicators.emplace_back(indicator);
+        }
+    }
+    return indicators;
 }
 
 SchemaValidationResult validate_ticks_schema(const TableSchema& schema)

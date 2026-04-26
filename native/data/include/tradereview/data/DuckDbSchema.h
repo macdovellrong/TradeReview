@@ -26,7 +26,9 @@ struct SchemaValidationResult {
 };
 
 [[nodiscard]] std::string duckdb_candle_table_for_period(std::string_view period);
+[[nodiscard]] std::string duckdb_period_for_candle_table(std::string_view table_name);
 [[nodiscard]] bool has_column(const TableSchema& schema, std::string_view name);
+[[nodiscard]] std::vector<std::string> canonical_indicator_columns_present(const TableSchema& schema);
 [[nodiscard]] SchemaValidationResult validate_ticks_schema(const TableSchema& schema);
 [[nodiscard]] SchemaValidationResult validate_candle_schema(
     const TableSchema& schema,

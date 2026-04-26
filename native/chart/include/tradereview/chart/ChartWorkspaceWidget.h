@@ -3,6 +3,7 @@
 #include <QWidget>
 
 #include "tradereview/chart/ChartToolbarWidget.h"
+#include "tradereview/data/CandleWindow.h"
 
 namespace tradereview::chart {
 
@@ -13,6 +14,7 @@ public:
     explicit ChartWorkspaceWidget(QWidget* parent = nullptr);
 
     void setStatusCallback(ChartToolbarWidget::StatusCallback callback);
+    void apply_window(data::CandleWindow window);
     [[nodiscard]] ChartViewWidget& chart_view();
     [[nodiscard]] const ChartViewWidget& chart_view() const;
 

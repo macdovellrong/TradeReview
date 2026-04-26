@@ -116,12 +116,12 @@
 - Modify: `native/chart/include/tradereview/chart/ChartWorkspaceWidget.h`
 - Modify: `native/chart/src/ChartWorkspaceWidget.cpp`
 
-- [ ] Replace the `Load Data` placeholder with a signal/callback path that opens a file dialog.
-- [ ] Add a controller that opens the repository, reads metadata, selects an initial center time, and requests the first candle window.
-- [ ] Pass the returned `CandleWindow` into the first `ChartViewWidget`.
-- [ ] Keep the UI responsive by keeping the synchronous path small; full async arrives in Task 6.
-- [ ] Static verification: `rg -n "DataLoadController|open_readonly|query_candles|Load Data is not wired" native`.
-- [ ] Commit with message: `接入C++单图数据加载路径`.
+- [x] Replace the `Load Data` placeholder with a signal/callback path that opens a file dialog.
+- [x] Add a controller that opens the repository, reads metadata, selects an initial center time, and requests the first candle window.
+- [x] Pass the returned `CandleWindow` into the first `ChartViewWidget`.
+- [x] Keep the UI responsive by keeping the synchronous path small; full async arrives in Task 6.
+- [x] Static verification: `rg -n "DataLoadController|open_readonly|query_candles|Load Data is not wired" native`.
+- [x] Commit with message: `接入C++单图数据加载路径`.
 
 ### Task 4: Real OpenGL Candle Layer
 
@@ -418,3 +418,20 @@
   - `-DTRADEREVIEW_NATIVE_WITH_DUCKDB=ON`
   - `-DDUCKDB_INCLUDE_DIR=C:\Build\deps\duckdb-v1.5.2`
   - `-DDUCKDB_LIBRARY=C:\Build\deps\duckdb-v1.5.2\duckdb.lib`
+
+### 2026-04-26 Task 3 Completed
+
+- Wired the native `Load Data` action to a file dialog and a new `DataLoadController`.
+- Implemented the first real single-chart DuckDB loading path: open read-only metadata, select an initial 6-hour window around the dataset midpoint, query `1min` candles, and apply the returned `CandleWindow` to the first chart.
+- Completed the first real DuckDB C API repository path for metadata and candle windows, including timestamp/datetime/time aliases, canonical indicator column discovery, empty-window handling, and post-build `duckdb.dll` copy for the app and tests.
+- Main-thread review fixed an integration bug where the loaded window generation did not match the chart scene generation.
+- Verified with `C:\Build\TradeReview-native-task3-msvc` using DuckDB ON:
+  - configure exited 0;
+  - full build exited 0 and produced both `tradereview_native_tests.exe` and `tradereview_native.exe`;
+  - `ctest --test-dir C:\Build\TradeReview-native-task3-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Verified with `C:\Build\TradeReview-native-task3-off-msvc` using DuckDB OFF:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task3-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- No native exe was launched.
+- Next task: Task 4, real OpenGL candle layer.

@@ -77,9 +77,15 @@ MainControlsBar::MainControlsBar(QWidget* parent)
     const QStringList primaryActions{"Load Data", "Reset View", "Save View"};
     for (const auto& action : primaryActions) {
         auto* button = addButton(layout, this, action);
-        connect(button, &QPushButton::clicked, this, [this, action](bool) {
-            notify(action);
-        });
+        if (action == "Load Data") {
+            connect(button, &QPushButton::clicked, this, [this](bool) {
+                loadData();
+            });
+        } else {
+            connect(button, &QPushButton::clicked, this, [this, action](bool) {
+                notify(action);
+            });
+        }
     }
 
     layout->addWidget(new QLabel("Layout:", this));
@@ -160,6 +166,18 @@ MainControlsBar::MainControlsBar(QWidget* parent)
 void MainControlsBar::setStatusCallback(StatusCallback callback)
 {
     status_callback_ = std::move(callback);
+}
+
+void MainControlsBar::setLoadDataCallback(LoadDataCallback callback)
+{
+    load_data_callback_ = std::move(callback);
+}
+
+void MainControlsBar::loadData() const
+{
+    if (load_data_callback_) {
+        load_data_callback_();
+    }
 }
 
 void MainControlsBar::notify(const QString& action) const

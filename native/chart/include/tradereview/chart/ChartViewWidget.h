@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <QOpenGLWidget>
 
 #include "tradereview/chart/ChartSceneModel.h"
@@ -12,6 +14,7 @@ class ChartViewWidget final : public QOpenGLWidget {
 public:
     explicit ChartViewWidget(QWidget* parent = nullptr);
 
+    std::uint64_t bump_generation();
     void apply_window(data::CandleWindow window);
     [[nodiscard]] const ChartSceneModel& scene_model() const;
 
