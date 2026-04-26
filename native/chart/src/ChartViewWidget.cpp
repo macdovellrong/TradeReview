@@ -1,5 +1,7 @@
 #include "tradereview/chart/ChartViewWidget.h"
 
+#include <QOpenGLContext>
+
 #include <utility>
 
 namespace tradereview::chart {
@@ -7,6 +9,22 @@ namespace tradereview::chart {
 ChartViewWidget::ChartViewWidget(QWidget* parent)
     : QOpenGLWidget(parent)
 {
+}
+
+ChartViewWidget::~ChartViewWidget()
+{
+    release_renderer();
+}
+
+void ChartViewWidget::release_renderer()
+{
+    if (context() == nullptr) {
+        return;
+    }
+
+    makeCurrent();
+    renderer_.release();
+    doneCurrent();
 }
 
 std::uint64_t ChartViewWidget::bump_generation()
@@ -28,6 +46,12 @@ const ChartSceneModel& ChartViewWidget::scene_model() const
 
 void ChartViewWidget::initializeGL()
 {
+    QObject::connect(
+        context(),
+        &QOpenGLContext::aboutToBeDestroyed,
+        this,
+        &ChartViewWidget::release_renderer,
+        Qt::DirectConnection);
     renderer_.initialize();
 }
 

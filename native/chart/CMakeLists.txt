@@ -6,6 +6,8 @@ add_library(tradereview_chart STATIC
     src/ChartIndexMapper.cpp
     src/LodResolver.cpp
     src/Windowing.cpp
+    rendering/src/CandleLayer.cpp
+    rendering/src/GLResources.cpp
     rendering/src/GLChartRenderer.cpp
 )
 

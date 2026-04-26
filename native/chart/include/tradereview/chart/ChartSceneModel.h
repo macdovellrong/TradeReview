@@ -11,6 +11,7 @@ namespace tradereview::chart {
 class ChartSceneModel {
 public:
     [[nodiscard]] std::uint64_t generation() const;
+    [[nodiscard]] std::uint64_t revision() const;
     std::uint64_t bump_generation();
 
     [[nodiscard]] bool apply_window(data::CandleWindow window);
@@ -21,6 +22,7 @@ public:
 
 private:
     std::uint64_t generation_ = 0;
+    std::uint64_t revision_ = 0;
     data::CandleWindow window_;
     ChartIndexMapper index_mapper_;
 };

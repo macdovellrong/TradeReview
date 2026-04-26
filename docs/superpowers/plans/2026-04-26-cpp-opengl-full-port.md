@@ -136,12 +136,12 @@
 - Modify: `native/chart/rendering/src/GLChartRenderer.cpp`
 - Modify: `native/chart/CMakeLists.txt`
 
-- [ ] Add shader/program and buffer lifetime wrappers owned by the GL thread.
-- [ ] Build candle body and wick geometry from the visible `CandleWindow`.
-- [ ] Render up/down candles with distinct colors and stable background/grid color.
-- [ ] Keep GPU buffers scoped to the current window/generation.
-- [ ] Static verification: `rg -n "CandleLayer|glBufferData|glDraw|generation|wick|body" native/chart`.
-- [ ] Commit with message: `实现C++ OpenGL K线图层`.
+- [x] Add shader/program and buffer lifetime wrappers owned by the GL thread.
+- [x] Build candle body and wick geometry from the visible `CandleWindow`.
+- [x] Render up/down candles with distinct colors and stable background/grid color.
+- [x] Keep GPU buffers scoped to the current window/generation.
+- [x] Static verification: `rg -n "CandleLayer|glBufferData|glDraw|generation|wick|body" native/chart`.
+- [x] Commit with message: `实现C++ OpenGL K线图层`.
 
 ### Task 5: Chart View Interaction
 
@@ -435,3 +435,23 @@
   - `ctest --test-dir C:\Build\TradeReview-native-task3-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
 - No native exe was launched.
 - Next task: Task 4, real OpenGL candle layer.
+
+### 2026-04-26 Task 4 Completed
+
+- Added `GLResources` wrappers for OpenGL buffers, vertex arrays, and shader programs, plus `CandleLayer` batched geometry/upload/rendering for candle bodies, wicks, and a stable grid.
+- Integrated `GLChartRenderer` with `CandleLayer` and Qt 6 `QOpenGLVersionFunctionsFactory`, and made `ChartViewWidget` release GL resources on context destruction without launching the native app.
+- Added scene revision tracking so same-generation data replacement invalidates the uploaded GPU buffers, and kept doji candles visible with a minimum body height.
+- Added native tests for candle geometry body/wick/grid output, inconsistent windows, visible doji bodies, and same-generation scene revisions.
+- Code review found context recreation, same-generation upload caching, doji visibility, and direct include gaps; all were fixed before commit.
+- Verified with `C:\Build\TradeReview-native-task4-msvc` using DuckDB ON:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task4-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Verified with `C:\Build\TradeReview-native-task4-off-msvc` using DuckDB OFF:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task4-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Static verification: `rg -n "CandleLayer|glBufferData|glDraw|generation|wick|body" native/chart`.
+- `git diff --check HEAD -- native/chart native/tests docs/superpowers/plans/2026-04-26-cpp-opengl-full-port.md` exited 0 with only LF-to-CRLF notices.
+- No native exe was launched.
+- Next task: Task 5, chart view interaction.

@@ -30,6 +30,7 @@ tradereview::data::CandleWindow sample_window(std::uint64_t generation)
 void test_scene_model_accepts_matching_generation()
 {
     tradereview::chart::ChartSceneModel model;
+    tradereview::core::assert_equal(model.revision(), std::uint64_t{0}, "initial revision");
     tradereview::core::assert_equal(model.bump_generation(), std::uint64_t{1}, "first generation bump returns 1");
     tradereview::core::assert_equal(model.bump_generation(), std::uint64_t{2}, "second generation bump returns 2");
     tradereview::core::assert_equal(model.generation(), std::uint64_t{2}, "generation after two bumps");
@@ -38,6 +39,21 @@ void test_scene_model_accepts_matching_generation()
 
     tradereview::core::assert_true(model.apply_window(std::move(window)), "matching generation is accepted");
     tradereview::core::assert_equal(model.row_count(), std::size_t{2}, "scene model row count");
+    tradereview::core::assert_equal(model.revision(), std::uint64_t{1}, "revision increments after accepted window");
+}
+
+void test_scene_model_revisions_same_generation_replacements()
+{
+    tradereview::chart::ChartSceneModel model;
+    model.bump_generation();
+
+    auto first = sample_window(model.generation());
+    auto second = sample_window(model.generation());
+    second.close = {1.35, 2.35};
+
+    tradereview::core::assert_true(model.apply_window(std::move(first)), "first matching window is accepted");
+    tradereview::core::assert_true(model.apply_window(std::move(second)), "same generation replacement is accepted");
+    tradereview::core::assert_equal(model.revision(), std::uint64_t{2}, "revision tracks same generation replacement");
 }
 
 void test_scene_model_rejects_stale_generation()
@@ -70,6 +86,9 @@ struct RegisterChartSceneModelTests {
         tradereview::tests::register_test(
             "scene model accepts matching generation",
             test_scene_model_accepts_matching_generation);
+        tradereview::tests::register_test(
+            "scene model revisions same generation replacements",
+            test_scene_model_revisions_same_generation_replacements);
         tradereview::tests::register_test(
             "scene model rejects stale generation",
             test_scene_model_rejects_stale_generation);

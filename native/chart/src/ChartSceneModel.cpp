@@ -9,6 +9,11 @@ std::uint64_t ChartSceneModel::generation() const
     return generation_;
 }
 
+std::uint64_t ChartSceneModel::revision() const
+{
+    return revision_;
+}
+
 std::uint64_t ChartSceneModel::bump_generation()
 {
     return ++generation_;
@@ -25,6 +30,7 @@ bool ChartSceneModel::apply_window(data::CandleWindow window)
 
     index_mapper_.set_timestamps(window.timestamp_ns);
     window_ = std::move(window);
+    ++revision_;
     return true;
 }
 

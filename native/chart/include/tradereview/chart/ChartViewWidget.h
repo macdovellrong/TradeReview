@@ -13,6 +13,7 @@ namespace tradereview::chart {
 class ChartViewWidget final : public QOpenGLWidget {
 public:
     explicit ChartViewWidget(QWidget* parent = nullptr);
+    ~ChartViewWidget() override;
 
     std::uint64_t bump_generation();
     void apply_window(data::CandleWindow window);
@@ -22,6 +23,7 @@ private:
     void initializeGL() override;
     void resizeGL(int width, int height) override;
     void paintGL() override;
+    void release_renderer();
 
     ChartSceneModel scene_model_;
     rendering::GLChartRenderer renderer_;
