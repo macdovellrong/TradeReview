@@ -85,9 +85,11 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
     for (const auto& period : periods) {
         auto* button = createToolbarButton(periodContent, period, 40);
         button->setCheckable(true);
+        button->setChecked(period == "1m");
         periodGroup->addButton(button);
+        period_buttons_.push_back(button);
         connect(button, &QPushButton::clicked, this, [this, period](bool) {
-            notify(QString("Period ") + period);
+            notify_period_selected(period);
         });
         periodLayout->addWidget(button);
     }
@@ -144,6 +146,20 @@ void ChartToolbarWidget::setIndicatorToggleCallback(IndicatorToggleCallback call
     indicator_toggle_callback_ = std::move(callback);
 }
 
+void ChartToolbarWidget::setPeriodSelectedCallback(PeriodSelectedCallback callback)
+{
+    period_selected_callback_ = std::move(callback);
+}
+
+void ChartToolbarWidget::setSelectedPeriod(const QString& period)
+{
+    for (auto* button : period_buttons_) {
+        if (button != nullptr) {
+            button->setChecked(button->text() == period);
+        }
+    }
+}
+
 void ChartToolbarWidget::notify(const QString& action) const
 {
     if (status_callback_) {
@@ -155,6 +171,13 @@ void ChartToolbarWidget::notify_indicator_toggle(const QString& indicator, bool 
 {
     if (indicator_toggle_callback_) {
         indicator_toggle_callback_(indicator, enabled);
+    }
+}
+
+void ChartToolbarWidget::notify_period_selected(const QString& period) const
+{
+    if (period_selected_callback_) {
+        period_selected_callback_(period);
     }
 }
 

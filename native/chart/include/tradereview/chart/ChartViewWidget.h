@@ -33,6 +33,7 @@ public:
     bool set_indicator_panels_enabled(bool enabled);
     [[nodiscard]] std::vector<std::string> requested_indicators() const;
     void set_reload_request_callback(ReloadRequestCallback callback);
+    void request_current_visible_window();
     [[nodiscard]] const ChartSceneModel& scene_model() const;
 
 private:
@@ -45,7 +46,6 @@ private:
     void wheelEvent(QWheelEvent* event) override;
     void release_renderer();
     void apply_interaction_update();
-    void request_current_visible_window();
 
     ChartSceneModel scene_model_;
     ChartInteractionController interaction_;

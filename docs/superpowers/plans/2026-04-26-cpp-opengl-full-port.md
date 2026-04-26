@@ -219,13 +219,13 @@
 - Modify: `native/app/src/MainControlsBar.cpp`
 - Modify: `native/app/src/MainWindow.cpp`
 
-- [ ] Replace one chart with managed chart panels.
-- [ ] Support 1-4 enabled charts.
-- [ ] Support Tabs, Vertical, Dual Vertical, and Grid 2x2 layouts.
-- [ ] Preserve each chart's selected period.
-- [ ] Use shared dataset metadata and independent chart generations.
-- [ ] Static verification: `rg -n "ChartPanelWidget|Grid 2x2|Dual Vertical|setChartCount|setLayoutMode|period" native`.
-- [ ] Commit with message: `实现C++多图工作区布局`.
+- [x] Replace one chart with managed chart panels.
+- [x] Support 1-4 enabled charts.
+- [x] Support Tabs, Vertical, Dual Vertical, and Grid 2x2 layouts.
+- [x] Preserve each chart's selected period.
+- [x] Use shared dataset metadata and independent chart generations.
+- [x] Static verification: `rg -n "ChartPanelWidget|Grid 2x2|Dual Vertical|setChartCount|setLayoutMode|period" native`.
+- [x] Commit with message: `实现C++多图工作区布局`.
 
 ### Task 9: Crosshair and Time Sync
 
@@ -515,3 +515,23 @@
 - Static verification: `rg -n "PaneLayout|IndicatorLayer|HistogramLayer|MACD|RSI|EMA20|BB" native/chart`.
 - No native exe was launched.
 - Next task: Task 8, multi-chart workspace and layouts.
+
+### 2026-04-26 Task 8 Completed
+
+- Added `ChartPanelWidget` and `ChartWorkspaceState` so the native workspace owns four persistent chart slots, each with its own toolbar, view, selected period, indicator state, and generation counter.
+- Rebuilt `ChartWorkspaceWidget` around managed panels with Tabs, Vertical, Dual Vertical, and Grid 2x2 layouts, plus 1-4 enabled chart support.
+- Wired the main controls bar to change chart count and layout mode, and forwarded period changes from each panel into independent window reload requests.
+- Updated `DataLoadController` so one opened dataset metadata snapshot is shared while enabled charts submit independent candle-window requests with per-chart period, pixel width, indicators, and generation.
+- Added native state tests for chart count clamping, layout mode storage, per-chart period preservation, and active chart clamping.
+- Verified the RED step first: DuckDB OFF test build failed on missing `ChartWorkspaceState.h` before implementation.
+- Verified with `C:\Build\TradeReview-native-task8-off-msvc` using DuckDB OFF:
+  - `cmake --build C:\Build\TradeReview-native-task8-off-msvc --target tradereview_native_tests --config Debug` exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task8-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`;
+  - `cmake --build C:\Build\TradeReview-native-task8-off-msvc --target tradereview_native --config Debug` exited 0.
+- Verified with `C:\Build\TradeReview-native-task8-msvc` using DuckDB ON:
+  - configure exited 0;
+  - full build exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task8-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`.
+- Static verification: `rg -n "ChartPanelWidget|Grid 2x2|Dual Vertical|setChartCount|setLayoutMode|period" native`.
+- No native exe was launched.
+- Next task: Task 9, crosshair and time sync.

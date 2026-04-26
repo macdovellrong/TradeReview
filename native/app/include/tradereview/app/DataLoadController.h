@@ -7,6 +7,7 @@
 
 #include <QString>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -48,6 +49,12 @@ public:
         QObject* receiver,
         LoadCallback callback);
     data::ScheduleSubmitStatus request_window_async(
+        core::TimeRange visible_range,
+        chart::ChartWorkspaceWidget& workspace,
+        QObject* receiver,
+        LoadCallback callback);
+    data::ScheduleSubmitStatus request_window_async(
+        std::uint64_t chart_id,
         core::TimeRange visible_range,
         chart::ChartWorkspaceWidget& workspace,
         QObject* receiver,

@@ -93,7 +93,7 @@ MainControlsBar::MainControlsBar(QWidget* parent)
     layoutCombo->addItems({"Tabs", "Dual Vertical", "Grid 2x2", "Vertical"});
     layoutCombo->setMinimumHeight(kControlHeight);
     connect(layoutCombo, &QComboBox::currentTextChanged, this, [this](const QString& text) {
-        notify(QString("Layout ") + text);
+        selectLayoutMode(text);
     });
     layout->addWidget(layoutCombo);
 
@@ -108,7 +108,7 @@ MainControlsBar::MainControlsBar(QWidget* parent)
     chartsCombo->setCurrentText("4");
     chartsCombo->setMinimumHeight(kControlHeight);
     connect(chartsCombo, &QComboBox::currentTextChanged, this, [this](const QString& text) {
-        notify(QString("Charts ") + text);
+        selectChartCount(text);
     });
     layout->addWidget(chartsCombo);
 
@@ -173,10 +173,34 @@ void MainControlsBar::setLoadDataCallback(LoadDataCallback callback)
     load_data_callback_ = std::move(callback);
 }
 
+void MainControlsBar::setLayoutModeCallback(LayoutModeCallback callback)
+{
+    layout_mode_callback_ = std::move(callback);
+}
+
+void MainControlsBar::setChartCountCallback(ChartCountCallback callback)
+{
+    chart_count_callback_ = std::move(callback);
+}
+
 void MainControlsBar::loadData() const
 {
     if (load_data_callback_) {
         load_data_callback_();
+    }
+}
+
+void MainControlsBar::selectLayoutMode(const QString& mode) const
+{
+    if (layout_mode_callback_) {
+        layout_mode_callback_(mode);
+    }
+}
+
+void MainControlsBar::selectChartCount(const QString& count) const
+{
+    if (chart_count_callback_) {
+        chart_count_callback_(count.toInt());
     }
 }
 

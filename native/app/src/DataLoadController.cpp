@@ -54,9 +54,9 @@ core::TimeRange initialVisibleRange(core::TimeRange tick_range)
     return {start, end};
 }
 
-int chartPixelWidth(const chart::ChartWorkspaceWidget& workspace)
+int chartPixelWidth(const chart::ChartWorkspaceWidget& workspace, std::uint64_t chart_id)
 {
-    return std::max(workspace.chart_view().width(), kDefaultPixelWidth);
+    return std::max(workspace.chart_pixel_width(chart_id), kDefaultPixelWidth);
 }
 
 std::string datasetPathForRequest(const std::string& opened_path, const data::DataSetInfo& dataset_info)
@@ -84,16 +84,20 @@ std::string requestedPeriod(const data::DataSetInfo& dataset_info)
 
 data::CandleWindowRequest makeWindowRequest(
     chart::ChartWorkspaceWidget& workspace,
+    std::uint64_t chart_id,
     core::TimeRange visible_range,
-    const std::string& requested_period)
+    const std::string& fallback_period)
 {
     data::CandleWindowRequest request;
-    request.chart_id = 1;
-    request.generation = workspace.chart_view().bump_generation();
-    request.requested_period = requested_period;
+    request.chart_id = chart_id;
+    request.generation = workspace.chart_view(chart_id).bump_generation();
+    request.requested_period = workspace.requested_period(chart_id);
+    if (request.requested_period.empty()) {
+        request.requested_period = fallback_period;
+    }
     request.visible_range = visible_range;
-    request.pixel_width = chartPixelWidth(workspace);
-    request.requested_indicators = workspace.requested_indicators();
+    request.pixel_width = chartPixelWidth(workspace, chart_id);
+    request.requested_indicators = workspace.requested_indicators(chart_id);
     return request;
 }
 
@@ -139,8 +143,19 @@ data::ScheduleSubmitStatus DataLoadController::load_file_async(
     dataset_path_ = datasetPathForRequest(opened_path, dataset_info_);
     requested_period_ = requestedPeriod(dataset_info_);
 
-    auto request = makeWindowRequest(workspace, initialVisibleRange(dataset_info_.tick_range), requested_period_);
-    return submit_window_async(std::move(request), workspace, receiver, std::move(callback));
+    const auto visible_range = initialVisibleRange(dataset_info_.tick_range);
+    auto first_status = data::ScheduleSubmitStatus::Scheduled;
+    auto first_request = true;
+    const auto chart_ids = workspace.enabled_chart_ids();
+    for (const auto chart_id : chart_ids) {
+        auto request = makeWindowRequest(workspace, chart_id, visible_range, requested_period_);
+        const auto status = submit_window_async(std::move(request), workspace, receiver, callback);
+        if (first_request) {
+            first_status = status;
+            first_request = false;
+        }
+    }
+    return first_status;
 }
 
 data::ScheduleSubmitStatus DataLoadController::request_window_async(
@@ -156,7 +171,24 @@ data::ScheduleSubmitStatus DataLoadController::request_window_async(
         throw std::runtime_error("no dataset loaded");
     }
 
-    auto request = makeWindowRequest(workspace, visible_range, requested_period_);
+    return request_window_async(workspace.active_chart_id(), visible_range, workspace, receiver, std::move(callback));
+}
+
+data::ScheduleSubmitStatus DataLoadController::request_window_async(
+    std::uint64_t chart_id,
+    core::TimeRange visible_range,
+    chart::ChartWorkspaceWidget& workspace,
+    QObject* receiver,
+    LoadCallback callback)
+{
+    if (receiver == nullptr) {
+        throw std::invalid_argument("request_window_async requires a QObject receiver");
+    }
+    if (dataset_path_.empty()) {
+        throw std::runtime_error("no dataset loaded");
+    }
+
+    auto request = makeWindowRequest(workspace, chart_id, visible_range, requested_period_);
     return submit_window_async(std::move(request), workspace, receiver, std::move(callback));
 }
 

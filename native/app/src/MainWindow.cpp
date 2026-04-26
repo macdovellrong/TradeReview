@@ -22,6 +22,20 @@
 namespace tradereview::app {
 namespace {
 
+chart::ChartLayoutMode layoutModeFromText(const QString& text)
+{
+    if (text == "Vertical") {
+        return chart::ChartLayoutMode::Vertical;
+    }
+    if (text == "Dual Vertical") {
+        return chart::ChartLayoutMode::DualVertical;
+    }
+    if (text == "Grid 2x2") {
+        return chart::ChartLayoutMode::Grid2x2;
+    }
+    return chart::ChartLayoutMode::Tabs;
+}
+
 QString formatTimestamp(std::int64_t timestamp_ns)
 {
     return QDateTime::fromMSecsSinceEpoch(timestamp_ns / 1000000LL, QTimeZone::UTC).toString(Qt::ISODate);
@@ -80,9 +94,10 @@ MainWindow::MainWindow(QWidget* parent)
     };
     mainControls->setStatusCallback(showPlaceholderStatus);
     chartWorkspace->setStatusCallback(showPlaceholderStatus);
-    chartWorkspace->chart_view().set_reload_request_callback([this, chartWorkspace](core::TimeRange range) {
+    chartWorkspace->setReloadRequestCallback([this, chartWorkspace](std::uint64_t chart_id, core::TimeRange range) {
         try {
             const auto status = data_load_controller_->request_window_async(
+                chart_id,
                 range,
                 *chartWorkspace,
                 this,
@@ -93,6 +108,14 @@ MainWindow::MainWindow(QWidget* parent)
         } catch (const std::exception& error) {
             statusBar()->showMessage(QString("Window reload failed: ") + error.what());
         }
+    });
+    mainControls->setLayoutModeCallback([this, chartWorkspace](const QString& mode) {
+        chartWorkspace->setLayoutMode(layoutModeFromText(mode));
+        statusBar()->showMessage(QString("Layout ") + mode);
+    });
+    mainControls->setChartCountCallback([this, chartWorkspace](int count) {
+        chartWorkspace->setChartCount(count);
+        statusBar()->showMessage(QString("Charts %1").arg(count));
     });
     mainControls->setLoadDataCallback([this, chartWorkspace]() {
         const auto path = QFileDialog::getOpenFileName(this, "Load DuckDB Data", QString(), "DuckDB (*.duckdb)");

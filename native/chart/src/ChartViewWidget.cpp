@@ -98,6 +98,22 @@ void ChartViewWidget::set_reload_request_callback(ReloadRequestCallback callback
     reload_request_callback_ = std::move(callback);
 }
 
+void ChartViewWidget::request_current_visible_window()
+{
+    if (!reload_request_callback_ || scene_model_.index_mapper().empty()) {
+        return;
+    }
+
+    const auto visible_range = interaction_.visible_time_range(scene_model_.index_mapper());
+    if (visible_range.end_ns <= visible_range.start_ns) {
+        return;
+    }
+
+    reload_request_callback_(visible_range);
+    has_last_reload_request_ = true;
+    last_reload_request_ = visible_range;
+}
+
 const ChartSceneModel& ChartViewWidget::scene_model() const
 {
     return scene_model_;
@@ -196,22 +212,6 @@ void ChartViewWidget::apply_interaction_update()
     if (range_changed) {
         update();
     }
-}
-
-void ChartViewWidget::request_current_visible_window()
-{
-    if (!reload_request_callback_ || scene_model_.index_mapper().empty()) {
-        return;
-    }
-
-    const auto visible_range = interaction_.visible_time_range(scene_model_.index_mapper());
-    if (visible_range.end_ns <= visible_range.start_ns) {
-        return;
-    }
-
-    reload_request_callback_(visible_range);
-    has_last_reload_request_ = true;
-    last_reload_request_ = visible_range;
 }
 
 } // namespace tradereview::chart
