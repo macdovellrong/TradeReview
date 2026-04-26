@@ -4,6 +4,8 @@ add_executable(tradereview_native_tests
     chart/test_chart_scene_model.cpp
     chart/test_chart_workspace_state.cpp
     chart/test_candle_layer_geometry.cpp
+    chart/test_drawing_layer_geometry.cpp
+    chart/test_drawing_input.cpp
     chart/test_lod_resolver.cpp
     chart/test_indicator_layer_geometry.cpp
     chart/test_pane_layout.cpp
@@ -17,6 +19,8 @@ add_executable(tradereview_native_tests
     data/test_duckdb_schema.cpp
     data/test_window_cache.cpp
     drawing/test_drawing_spec.cpp
+    drawing/test_drawing_interaction_state.cpp
+    drawing/test_drawing_session.cpp
     drawing/test_fib_math.cpp
     sync/test_crosshair_sync.cpp
     test_main.cpp

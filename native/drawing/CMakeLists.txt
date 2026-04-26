@@ -1,5 +1,7 @@
 add_library(tradereview_drawing STATIC
     src/DrawingSpec.cpp
+    src/DrawingInteractionState.cpp
+    src/DrawingSession.cpp
     src/FibMath.cpp
     src/FibSettings.cpp
 )

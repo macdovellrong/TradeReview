@@ -37,6 +37,7 @@ private:
     void connect_toolbar();
     void set_indicator_enabled(const QString& indicator, bool enabled);
     void select_period(const QString& period);
+    void handle_drawing_action(const QString& action);
 
     std::uint64_t chart_id_ = 0;
     std::string requested_period_ = "1min";

@@ -1,6 +1,7 @@
 #include "tradereview/chart/ChartPanelWidget.h"
 
 #include "tradereview/chart/ChartViewWidget.h"
+#include "tradereview/drawing/DrawingSpec.h"
 
 #include <QString>
 #include <QVBoxLayout>
@@ -120,6 +121,9 @@ void ChartPanelWidget::connect_toolbar()
     toolbar_->setPeriodSelectedCallback([this](const QString& period) {
         select_period(period);
     });
+    toolbar_->setDrawingActionCallback([this](const QString& action) {
+        handle_drawing_action(action);
+    });
     toolbar_->setSelectedPeriod(toolbar_period(requested_period_));
 }
 
@@ -149,6 +153,39 @@ void ChartPanelWidget::select_period(const QString& period)
         period_changed_callback_(chart_id_, requested_period_);
     }
     chart_view_->request_current_visible_window();
+}
+
+void ChartPanelWidget::handle_drawing_action(const QString& action)
+{
+    using drawing::DrawingType;
+
+    if (action == "Sel") {
+        chart_view_->clear_active_drawing_tool();
+        return;
+    }
+    if (action == "H") {
+        chart_view_->set_active_drawing_tool(DrawingType::HorizontalLine);
+        return;
+    }
+    if (action == "V") {
+        chart_view_->set_active_drawing_tool(DrawingType::VerticalLine);
+        return;
+    }
+    if (action == "Line") {
+        chart_view_->set_active_drawing_tool(DrawingType::Line);
+        return;
+    }
+    if (action == "Fib") {
+        chart_view_->set_active_drawing_tool(DrawingType::FibRetracement);
+        return;
+    }
+    if (action == "Fib Ext") {
+        chart_view_->set_active_drawing_tool(DrawingType::FibExtension);
+        return;
+    }
+    if (action == "Clear") {
+        chart_view_->clear_drawings();
+    }
 }
 
 } // namespace tradereview::chart

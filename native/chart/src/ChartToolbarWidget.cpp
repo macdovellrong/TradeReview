@@ -28,6 +28,12 @@ bool isDefaultSelectedEma(const QString& label)
     return label == "EMA20" || label == "EMA30" || label == "EMA40" || label == "EMA50" || label == "EMA60";
 }
 
+bool isWiredDrawingAction(const QString& action)
+{
+    return action == "Sel" || action == "H" || action == "V" || action == "Line" || action == "Fib"
+        || action == "Fib Ext" || action == "Clear";
+}
+
 } // namespace
 
 ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
@@ -151,6 +157,11 @@ void ChartToolbarWidget::setPeriodSelectedCallback(PeriodSelectedCallback callba
     period_selected_callback_ = std::move(callback);
 }
 
+void ChartToolbarWidget::setDrawingActionCallback(DrawingActionCallback callback)
+{
+    drawing_action_callback_ = std::move(callback);
+}
+
 void ChartToolbarWidget::setSelectedPeriod(const QString& period)
 {
     for (auto* button : period_buttons_) {
@@ -162,6 +173,11 @@ void ChartToolbarWidget::setSelectedPeriod(const QString& period)
 
 void ChartToolbarWidget::notify(const QString& action) const
 {
+    if (drawing_action_callback_ && isWiredDrawingAction(action)) {
+        drawing_action_callback_(action);
+        return;
+    }
+
     if (status_callback_) {
         status_callback_(action + " is not wired yet");
     }

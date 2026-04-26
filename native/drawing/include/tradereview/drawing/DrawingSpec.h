@@ -3,6 +3,7 @@
 #include "tradereview/drawing/FibSettings.h"
 
 #include <cstdint>
+#include <ostream>
 #include <optional>
 #include <vector>
 
@@ -26,11 +27,14 @@ struct FibConfigSnapshot {
 };
 
 struct DrawingSpec {
+    std::uint64_t id = 0;
     DrawingType type = DrawingType::Line;
     std::vector<DrawingPoint> points;
     std::optional<FibConfigSnapshot> fib_snapshot;
 };
 
+[[nodiscard]] const char* drawing_type_name(DrawingType type);
+std::ostream& operator<<(std::ostream& out, DrawingType type);
 [[nodiscard]] std::size_t required_point_count(DrawingType type);
 [[nodiscard]] bool is_fib_drawing_type(DrawingType type);
 [[nodiscard]] DrawingSpec normalize_drawing_spec(

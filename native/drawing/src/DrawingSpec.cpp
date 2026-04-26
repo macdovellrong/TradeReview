@@ -35,6 +35,29 @@ std::size_t required_point_count(DrawingType type)
     throw std::invalid_argument("Unsupported drawing type");
 }
 
+const char* drawing_type_name(DrawingType type)
+{
+    switch (type) {
+    case DrawingType::HorizontalLine:
+        return "hline";
+    case DrawingType::VerticalLine:
+        return "vline";
+    case DrawingType::Line:
+        return "line";
+    case DrawingType::FibRetracement:
+        return "fib";
+    case DrawingType::FibExtension:
+        return "fib_ext";
+    }
+    return "unknown";
+}
+
+std::ostream& operator<<(std::ostream& out, DrawingType type)
+{
+    out << drawing_type_name(type);
+    return out;
+}
+
 bool is_fib_drawing_type(DrawingType type)
 {
     return type == DrawingType::FibRetracement || type == DrawingType::FibExtension;

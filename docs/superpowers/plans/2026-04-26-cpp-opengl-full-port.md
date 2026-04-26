@@ -278,19 +278,23 @@
 **Files:**
 - Create: `native/drawing/include/tradereview/drawing/DrawingSession.h`
 - Create: `native/drawing/src/DrawingSession.cpp`
+- Create: `native/drawing/include/tradereview/drawing/DrawingInteractionState.h`
+- Create: `native/drawing/src/DrawingInteractionState.cpp`
+- Create: `native/chart/include/tradereview/chart/DrawingInput.h`
+- Create: `native/chart/src/DrawingInput.cpp`
 - Create: `native/chart/rendering/include/tradereview/chart/rendering/DrawingLayer.h`
 - Create: `native/chart/rendering/src/DrawingLayer.cpp`
 - Modify: `native/chart/src/ChartToolbarWidget.cpp`
 - Modify: `native/chart/src/ChartViewWidget.cpp`
 - Modify: `native/chart/rendering/src/GLChartRenderer.cpp`
 
-- [ ] Activate tools from toolbar: Sel, H, V, Line, Fib, Fib Ext.
-- [ ] Convert mouse clicks to canonical drawing points.
-- [ ] Render preview while drawing.
-- [ ] Store completed drawings and replay them across period changes through timestamp mapping.
-- [ ] Implement Clear and selected drawing delete.
-- [ ] Static verification: `rg -n "DrawingSession|DrawingLayer|Fib Ext|Clear|preview|delete" native`.
-- [ ] Commit with message: `实现C++图表绘图交互`.
+- [x] Activate tools from toolbar: Sel, H, V, Line, Fib, Fib Ext.
+- [x] Convert mouse clicks to canonical drawing points.
+- [x] Render preview while drawing.
+- [x] Store completed drawings and replay them across period changes through timestamp mapping.
+- [x] Implement Clear and selected drawing delete.
+- [x] Static verification: `rg -n "DrawingSession|DrawingLayer|Fib Ext|Clear|preview|delete" native`.
+- [x] Commit with message: `实现C++图表绘图交互`.
 
 ### Task 12: Chunked Replay
 
@@ -581,3 +585,28 @@
 - `git diff --check` exited 0 with only LF-to-CRLF notices.
 - No native exe was launched.
 - Next task: Task 11, drawing interaction and rendering.
+
+### 2026-04-26 Task 11 Completed
+
+- Added `DrawingSession` for toolbar-driven drawing creation, point-count completion, Fib setting snapshots, and live preview specs.
+- Added `DrawingLayer` for OpenGL line rendering of hline, vline, line, Fib retracement, Fib extension, and translucent previews.
+- Added pure `DrawingInteractionState` and `DrawingInput` helpers with regression tests for Clear resetting active sessions and rejecting clicks outside the price pane.
+- Wired chart toolbar drawing controls into `ChartPanelWidget` and `ChartViewWidget`: Sel clears the active tool, H/V/Line/Fib/Fib Ext activate drawing sessions, Clear removes drawings, and Delete/Backspace removes the selected drawing. The initial selection model selects the last completed drawing and supports explicit `select_drawing(id)`; mouse hit-testing is deferred.
+- Stored drawings as canonical timestamp/price points and mapped them back through `ChartIndexMapper` during rendering, so period changes replay drawings through timestamp mapping.
+- Code review found two medium issues before commit: drawing clicks could be accepted in MACD/RSI panes, and Clear left an in-progress drawing session alive. Both were fixed before commit with regression tests.
+- Verified RED first:
+  - OFF test build failed before implementation on missing `tradereview/drawing/DrawingSession.h`;
+  - OFF test build failed before implementation on missing `tradereview/chart/rendering/DrawingLayer.h`.
+- Verified with `C:\Build\TradeReview-native-task11-off-msvc` using DuckDB OFF:
+  - `cmake --build C:\Build\TradeReview-native-task11-off-msvc --target tradereview_native_tests --config Debug` exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task11-off-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`;
+  - full Debug build exited 0.
+- Verified with `C:\Build\TradeReview-native-task11-on-msvc` using DuckDB ON:
+  - configure/build/CTest exited 0;
+  - `ctest --test-dir C:\Build\TradeReview-native-task11-on-msvc --output-on-failure -C Debug` reported `100% tests passed, 0 tests failed out of 1`;
+  - full Debug build exited 0.
+- Build note: the stale `C:\Build\TradeReview-native-task11-msvc` cache points at an unavailable `Q:/...` source path, so the verified ON build used `C:\Build\TradeReview-native-task11-on-msvc`. The working ON command uses `cmd /v:on` and `!PATH!` to preserve `VsDevCmd` SDK paths while adding Qt.
+- Static verification: `rg -n "DrawingSession|DrawingLayer|Fib Ext|Clear|preview|delete" native --glob '!native/build/**' --glob '!native-build*/**'`.
+- `git diff --check` exited 0 with only LF-to-CRLF notices.
+- No native exe was launched.
+- Next task: Task 12, chunked replay.

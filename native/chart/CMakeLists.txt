@@ -7,12 +7,14 @@ add_library(tradereview_chart STATIC
     src/ChartSceneModel.cpp
     src/ChartInteractionController.cpp
     src/ChartIndexMapper.cpp
+    src/DrawingInput.cpp
     src/LodResolver.cpp
     src/PaneLayout.cpp
     src/Windowing.cpp
     rendering/src/CandleLayer.cpp
     rendering/src/GLResources.cpp
     rendering/src/GLChartRenderer.cpp
+    rendering/src/DrawingLayer.cpp
     rendering/src/HistogramLayer.cpp
     rendering/src/IndicatorLayer.cpp
 )
@@ -29,6 +31,7 @@ target_link_libraries(tradereview_chart
     PUBLIC
         tradereview_core
         tradereview_data
+        tradereview_drawing
         tradereview_sync
         Qt6::Widgets
         Qt6::OpenGL

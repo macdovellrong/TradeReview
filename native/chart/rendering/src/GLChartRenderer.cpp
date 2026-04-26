@@ -8,6 +8,7 @@
 #include <QOpenGLVersionFunctionsFactory>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tradereview::chart::rendering {
@@ -57,6 +58,7 @@ void GLChartRenderer::release()
     candle_layer_.release(*functions);
     indicator_layer_.release(*functions);
     histogram_layer_.release(*functions);
+    drawing_layer_.release(*functions);
     initialized_ = false;
 }
 
@@ -71,6 +73,15 @@ void GLChartRenderer::resize(int width, int height)
 }
 
 void GLChartRenderer::render(const ChartSceneModel& scene_model)
+{
+    render(scene_model, {}, std::nullopt, 0);
+}
+
+void GLChartRenderer::render(
+    const ChartSceneModel& scene_model,
+    const std::vector<drawing::DrawingSpec>& drawings,
+    std::optional<drawing::DrawingSpec> preview,
+    std::uint64_t drawing_revision)
 {
     QOpenGLFunctions_3_3_Core* functions = current_functions();
     if (functions == nullptr) {
@@ -125,6 +136,17 @@ void GLChartRenderer::render(const ChartSceneModel& scene_model)
 
     indicator_layer_.upload(*functions, indicators, scene_model.revision());
     indicator_layer_.render(*functions);
+
+    const auto drawing_geometry = build_drawing_geometry(
+        scene_model.window(),
+        scene_model.index_mapper(),
+        scene_model.visible_dense_range(),
+        layout.price,
+        drawings,
+        std::move(preview));
+    const auto revision = (scene_model.revision() * 1'000'003ULL) + drawing_revision;
+    drawing_layer_.upload(*functions, drawing_geometry, revision);
+    drawing_layer_.render(*functions);
 }
 
 } // namespace tradereview::chart::rendering

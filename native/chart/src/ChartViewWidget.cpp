@@ -1,7 +1,9 @@
 #include "tradereview/chart/ChartViewWidget.h"
 
+#include "tradereview/chart/DrawingInput.h"
 #include "tradereview/chart/PaneLayout.h"
 
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QWheelEvent>
@@ -93,6 +95,7 @@ ChartViewWidget::ChartViewWidget(QWidget* parent)
     : QOpenGLWidget(parent)
 {
     setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
 }
 
 ChartViewWidget::~ChartViewWidget()
@@ -182,6 +185,77 @@ void ChartViewWidget::set_reload_request_callback(ReloadRequestCallback callback
 void ChartViewWidget::set_crosshair_moved_callback(CrosshairMovedCallback callback)
 {
     crosshair_moved_callback_ = std::move(callback);
+}
+
+void ChartViewWidget::set_fib_settings(drawing::FibSettings settings)
+{
+    drawing_state_.set_fib_settings(std::move(settings));
+    update();
+}
+
+void ChartViewWidget::set_active_drawing_tool(drawing::DrawingType type)
+{
+    drawing_state_.set_active_tool(type);
+    update();
+}
+
+void ChartViewWidget::clear_active_drawing_tool()
+{
+    if (drawing_state_.clear_active_tool()) {
+        update();
+    }
+}
+
+std::optional<drawing::DrawingType> ChartViewWidget::active_drawing_tool() const
+{
+    return drawing_state_.active_tool();
+}
+
+std::optional<drawing::DrawingSpec> ChartViewWidget::add_drawing_point(drawing::DrawingPoint point)
+{
+    auto completed = drawing_state_.add_point(point);
+    update();
+    return completed;
+}
+
+void ChartViewWidget::clear_drawings()
+{
+    if (drawing_state_.clear_drawings()) {
+        update();
+    }
+}
+
+bool ChartViewWidget::delete_selected_drawing()
+{
+    const auto deleted = drawing_state_.delete_selected_drawing();
+    if (deleted) {
+        update();
+    }
+    return deleted;
+}
+
+bool ChartViewWidget::select_drawing(std::uint64_t drawing_id)
+{
+    const auto selected = drawing_state_.select_drawing(drawing_id);
+    if (selected) {
+        update();
+    }
+    return selected;
+}
+
+const std::vector<drawing::DrawingSpec>& ChartViewWidget::drawings() const
+{
+    return drawing_state_.drawings();
+}
+
+std::optional<drawing::DrawingSpec> ChartViewWidget::drawing_preview() const
+{
+    return drawing_state_.preview();
+}
+
+std::optional<std::uint64_t> ChartViewWidget::selected_drawing_id() const
+{
+    return drawing_state_.selected_drawing_id();
 }
 
 void ChartViewWidget::request_current_visible_window()
@@ -282,12 +356,22 @@ void ChartViewWidget::resizeGL(int width, int height)
 
 void ChartViewWidget::paintGL()
 {
-    renderer_.render(scene_model_);
+    renderer_.render(scene_model_, drawing_state_.drawings(), drawing_state_.preview(), drawing_state_.revision());
 }
 
 void ChartViewWidget::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
+        setFocus(Qt::MouseFocusReason);
+        if (drawing_state_.active_tool().has_value()) {
+            const auto point = drawing_point_from_position(event->position());
+            if (point.has_value()) {
+                (void)add_drawing_point(*point);
+            }
+            event->accept();
+            return;
+        }
+
         is_panning_ = true;
         last_mouse_position_ = event->position();
         setCursor(Qt::ClosedHandCursor);
@@ -318,6 +402,13 @@ void ChartViewWidget::mouseMoveEvent(QMouseEvent* event)
         update();
     }
 
+    if (drawing_state_.active_tool().has_value()) {
+        const auto point = drawing_point_from_position(event->position());
+        if (drawing_state_.update_preview(point)) {
+            update();
+        }
+    }
+
     QOpenGLWidget::mouseMoveEvent(event);
 }
 
@@ -344,6 +435,16 @@ void ChartViewWidget::wheelEvent(QWheelEvent* event)
     interaction_.zoom_at_pixel(event->position().x(), width(), scale);
     apply_interaction_update();
     event->accept();
+}
+
+void ChartViewWidget::keyPressEvent(QKeyEvent* event)
+{
+    if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) && delete_selected_drawing()) {
+        event->accept();
+        return;
+    }
+
+    QOpenGLWidget::keyPressEvent(event);
 }
 
 void ChartViewWidget::apply_interaction_update()
@@ -385,6 +486,28 @@ std::optional<ChartCrosshairState> ChartViewWidget::crosshair_from_position(QPoi
         *price,
         dense_x,
     };
+}
+
+std::optional<drawing::DrawingPoint> ChartViewWidget::drawing_point_from_position(QPointF position) const
+{
+    if (scene_model_.index_mapper().empty() || width() <= 0 || height() <= 0) {
+        return std::nullopt;
+    }
+
+    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    if (!price_range.has_value()) {
+        return std::nullopt;
+    }
+
+    return drawing_point_from_widget_position(
+        scene_model_.index_mapper(),
+        scene_model_.visible_dense_range(),
+        build_pane_layout(scene_model_.indicator_panels_enabled()).price,
+        width(),
+        height(),
+        WidgetPosition{position.x(), position.y()},
+        price_range->first,
+        price_range->second);
 }
 
 double ChartViewWidget::dense_x_at_pixel(double pixel_x) const
