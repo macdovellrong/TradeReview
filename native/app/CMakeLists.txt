@@ -29,11 +29,15 @@ qt_add_executable(tradereview_native
     include/tradereview/app/MainControlsBar.h
     include/tradereview/app/MainWindow.h
     include/tradereview/app/NativeApp.h
+    include/tradereview/app/SideInfoPanelWidget.h
+    include/tradereview/app/StatusStripWidget.h
     src/AppTheme.cpp
     src/DataLoadController.cpp
     src/MainControlsBar.cpp
     src/MainWindow.cpp
     src/NativeApp.cpp
+    src/SideInfoPanelWidget.cpp
+    src/StatusStripWidget.cpp
     src/main.cpp
 )
 
