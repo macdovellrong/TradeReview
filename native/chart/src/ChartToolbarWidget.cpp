@@ -40,35 +40,16 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
     : QWidget(parent)
 {
     setObjectName("ChartToolbarWidget");
-    setStyleSheet(R"(
-        #ChartToolbarWidget {
-            background-color: #181818;
-        }
-        #ChartToolbarWidget QPushButton {
-            background-color: #222222;
-            border: 1px solid #444444;
-            border-radius: 2px;
-            color: #aaaaaa;
-            padding: 2px 6px;
-        }
-        #ChartToolbarWidget QPushButton:hover {
-            background-color: #333333;
-            color: #ffffff;
-        }
-        #ChartToolbarWidget QPushButton:checked {
-            background-color: #007acc;
-            border-color: #007acc;
-            color: #ffffff;
-        }
-        #ChartToolbarWidget QScrollArea {
-            background-color: transparent;
-            border: none;
-        }
-    )");
 
     auto* toolbarLayout = new QHBoxLayout(this);
     toolbarLayout->setContentsMargins(4, 3, 4, 3);
     toolbarLayout->setSpacing(4);
+
+    auto* periodWidget = new QWidget(this);
+    periodWidget->setObjectName("ToolbarGroup");
+    auto* periodGroupLayout = new QHBoxLayout(periodWidget);
+    periodGroupLayout->setContentsMargins(0, 0, 8, 0);
+    periodGroupLayout->setSpacing(4);
 
     auto* periodScrollArea = new QScrollArea(this);
     periodScrollArea->setFixedHeight(kButtonHeight + 6);
@@ -101,32 +82,47 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
     }
     periodLayout->addStretch();
     periodScrollArea->setWidget(periodContent);
-    toolbarLayout->addWidget(periodScrollArea, 1);
+    periodGroupLayout->addWidget(periodScrollArea);
+    toolbarLayout->addWidget(periodWidget, 1);
+
+    auto* indicator_widget = new QWidget(this);
+    indicator_widget->setObjectName("ToolbarGroup");
+    auto* indicator_layout = new QHBoxLayout(indicator_widget);
+    indicator_layout->setContentsMargins(8, 0, 8, 0);
+    indicator_layout->setSpacing(4);
+    toolbarLayout->addWidget(indicator_widget);
 
     auto* indicatorGroup = new QButtonGroup(this);
     indicatorGroup->setExclusive(false);
     const QStringList emaIndicators{"EMA20", "EMA30", "EMA40", "EMA50", "EMA60", "EMA100", "EMA240"};
     for (const auto& label : emaIndicators) {
-        auto* button = createToolbarButton(this, label, 68);
+        auto* button = createToolbarButton(indicator_widget, label, 68);
         button->setCheckable(true);
         button->setChecked(isDefaultSelectedEma(label));
         indicatorGroup->addButton(button);
         connect(button, &QPushButton::toggled, this, [this, label](bool checked) {
             notify_indicator_toggle(label, checked);
         });
-        toolbarLayout->addWidget(button);
+        indicator_layout->addWidget(button);
     }
 
     for (const auto& label : QStringList{"BB", "MACD/RSI"}) {
-        auto* button = createToolbarButton(this, label, label == "BB" ? 44 : 86);
+        auto* button = createToolbarButton(indicator_widget, label, label == "BB" ? 44 : 86);
         button->setCheckable(true);
         button->setChecked(true);
         indicatorGroup->addButton(button);
         connect(button, &QPushButton::toggled, this, [this, label](bool checked) {
             notify_indicator_toggle(label, checked);
         });
-        toolbarLayout->addWidget(button);
+        indicator_layout->addWidget(button);
     }
+
+    auto* drawing_widget = new QWidget(this);
+    drawing_widget->setObjectName("ToolbarGroup");
+    auto* drawing_layout = new QHBoxLayout(drawing_widget);
+    drawing_layout->setContentsMargins(8, 0, 0, 0);
+    drawing_layout->setSpacing(4);
+    toolbarLayout->addWidget(drawing_widget);
 
     const QStringList drawingActions{"Sel", "H", "V", "Line", "Fib", "Fib Ext", "Fib Config", "Clear", "Pop"};
     for (const auto& action : drawingActions) {
@@ -134,11 +130,11 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
         if (action == "Fib Ext" || action == "Fib Config") {
             width = 76;
         }
-        auto* button = createToolbarButton(this, action, width);
+        auto* button = createToolbarButton(drawing_widget, action, width);
         connect(button, &QPushButton::clicked, this, [this, action](bool) {
             notify(action);
         });
-        toolbarLayout->addWidget(button);
+        drawing_layout->addWidget(button);
     }
 }
 

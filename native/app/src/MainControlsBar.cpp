@@ -11,6 +11,7 @@
 #include <QString>
 #include <QStringList>
 #include <QSignalBlocker>
+#include <QStyle>
 #include <QTimeZone>
 
 #include <cstdint>
@@ -37,6 +38,17 @@ QPushButton* addButton(QHBoxLayout* layout, QWidget* parent, const QString& text
     }
     layout->addWidget(button);
     return button;
+}
+
+QHBoxLayout* addGroup(QHBoxLayout* root, QWidget* parent)
+{
+    auto* group_widget = new QWidget(parent);
+    group_widget->setObjectName("ToolbarGroup");
+    auto* group_layout = new QHBoxLayout(group_widget);
+    group_layout->setContentsMargins(0, 0, 10, 0);
+    group_layout->setSpacing(5);
+    root->addWidget(group_widget);
+    return group_layout;
 }
 
 std::int64_t stepNanoseconds(const QString& text)
@@ -84,44 +96,19 @@ MainControlsBar::MainControlsBar(QWidget* parent)
     : QWidget(parent)
 {
     setObjectName("MainControlsBar");
-    setStyleSheet(R"(
-        #MainControlsBar {
-            background-color: #181818;
-        }
-        #MainControlsBar QLabel,
-        #MainControlsBar QCheckBox {
-            color: #cfcfcf;
-        }
-        #MainControlsBar QPushButton,
-        #MainControlsBar QComboBox,
-        #MainControlsBar QDateTimeEdit {
-            background-color: #242424;
-            border: 1px solid #444444;
-            border-radius: 2px;
-            color: #d8d8d8;
-            padding: 3px 8px;
-        }
-        #MainControlsBar QPushButton:hover,
-        #MainControlsBar QComboBox:hover,
-        #MainControlsBar QDateTimeEdit:hover {
-            background-color: #303030;
-            color: #ffffff;
-        }
-        #MainControlsBar QPushButton:checked {
-            background-color: #007acc;
-            border-color: #007acc;
-            color: #ffffff;
-        }
-    )");
 
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(4);
 
+    auto* data_group = addGroup(layout, this);
     const QStringList primaryActions{"Load Data", "Reset View", "Save View"};
     for (const auto& action : primaryActions) {
-        auto* button = addButton(layout, this, action);
+        auto* button = addButton(data_group, this, action);
         if (action == "Load Data") {
+            button->setProperty("primary", true);
+            button->style()->unpolish(button);
+            button->style()->polish(button);
             connect(button, &QPushButton::clicked, this, [this](bool) {
                 loadData();
             });
@@ -140,21 +127,22 @@ MainControlsBar::MainControlsBar(QWidget* parent)
         }
     }
 
-    layout->addWidget(new QLabel("Layout:", this));
+    auto* layout_group = addGroup(layout, this);
+    layout_group->addWidget(new QLabel("Layout:", this));
     layout_combo_ = new QComboBox(this);
     layout_combo_->addItems({"Tabs", "Dual Vertical", "Grid 2x2", "Vertical"});
     layout_combo_->setMinimumHeight(kControlHeight);
     connect(layout_combo_, &QComboBox::currentTextChanged, this, [this](const QString& text) {
         selectLayoutMode(text);
     });
-    layout->addWidget(layout_combo_);
+    layout_group->addWidget(layout_combo_);
 
-    auto* popLayoutButton = addButton(layout, this, "Pop Layout");
+    auto* popLayoutButton = addButton(layout_group, this, "Pop Layout");
     connect(popLayoutButton, &QPushButton::clicked, this, [this](bool) {
         notify("Pop Layout");
     });
 
-    layout->addWidget(new QLabel("Charts:", this));
+    layout_group->addWidget(new QLabel("Charts:", this));
     charts_combo_ = new QComboBox(this);
     charts_combo_->addItems({"1", "2", "3", "4"});
     charts_combo_->setCurrentText("4");
@@ -162,19 +150,23 @@ MainControlsBar::MainControlsBar(QWidget* parent)
     connect(charts_combo_, &QComboBox::currentTextChanged, this, [this](const QString& text) {
         selectChartCount(text);
     });
-    layout->addWidget(charts_combo_);
+    layout_group->addWidget(charts_combo_);
 
+    auto* replay_group = addGroup(layout, this);
     auto* replayMode = new QCheckBox("Replay Mode", this);
     connect(replayMode, &QCheckBox::toggled, this, [this](bool checked) {
         setReplayMode(checked);
     });
-    layout->addWidget(replayMode);
+    replay_group->addWidget(replayMode);
 
     const QStringList replayActions{"Play", "Back", "Forward"};
     for (const auto& action : replayActions) {
-        auto* button = addButton(layout, this, action);
+        auto* button = addButton(replay_group, this, action);
         if (action == "Play") {
             replay_play_button_ = button;
+            button->setProperty("primary", true);
+            button->style()->unpolish(button);
+            button->style()->polish(button);
         } else if (action == "Back") {
             replay_back_button_ = button;
         } else if (action == "Forward") {
@@ -198,14 +190,15 @@ MainControlsBar::MainControlsBar(QWidget* parent)
     connect(replay_step_combo_, &QComboBox::currentTextChanged, this, [this](const QString& text) {
         notify(QString("Step ") + text);
     });
-    layout->addWidget(replay_step_combo_);
+    replay_group->addWidget(replay_step_combo_);
 
-    layout->addWidget(new QLabel("Speed:", this));
+    auto* speed_layout = addGroup(layout, this);
+    speed_layout->addWidget(new QLabel("Speed:", this));
     auto* speedGroup = new QButtonGroup(this);
     speedGroup->setExclusive(true);
     for (const auto speed : {1, 10, 60, 120, 300, 600}) {
         const auto label = QString::number(speed) + "x";
-        auto* button = addButton(layout, this, label, 44);
+        auto* button = addButton(speed_layout, this, label, 44);
         button->setCheckable(true);
         button->setChecked(speed == 60);
         speedGroup->addButton(button);
@@ -218,6 +211,7 @@ MainControlsBar::MainControlsBar(QWidget* parent)
         });
     }
 
+    auto* time_group = addGroup(layout, this);
     date_time_edit_ = new QDateTimeEdit(this);
     date_time_edit_->setDisplayFormat("yyyy-MM-dd HH:mm");
     date_time_edit_->setCalendarPopup(true);
@@ -228,7 +222,7 @@ MainControlsBar::MainControlsBar(QWidget* parent)
     connect(date_time_edit_, &QDateTimeEdit::editingFinished, this, [this]() {
         jumpToDateTime();
     });
-    layout->addWidget(date_time_edit_);
+    time_group->addWidget(date_time_edit_);
 
     layout->addStretch();
     setReplayControlsEnabled(false);
@@ -305,7 +299,10 @@ void MainControlsBar::setReplayControlsEnabled(bool enabled)
 void MainControlsBar::setReplayPlaying(bool playing)
 {
     if (replay_play_button_ != nullptr) {
+        replay_play_button_->setProperty("primary", true);
         replay_play_button_->setText(playing ? "Pause" : "Play");
+        replay_play_button_->style()->unpolish(replay_play_button_);
+        replay_play_button_->style()->polish(replay_play_button_);
     }
 }
 
