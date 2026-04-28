@@ -69,6 +69,9 @@ void test_indicator_contracts_are_canonical()
         "MACD",
         "MACD_Signal",
         "MACD_Hist",
+        "RSI6",
+        "RSI12",
+        "RSI24",
         "RSI"};
 
     tradereview::core::assert_equal(

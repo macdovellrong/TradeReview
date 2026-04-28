@@ -114,8 +114,17 @@ void main()
     if (name == IndicatorColumns::MACD_Signal) {
         return {0.0F, 0.0F, 1.0F, 0.78F, 0.18F, 0.95F};
     }
-    if (name == IndicatorColumns::RSI) {
+    if (name == IndicatorColumns::RSI6) {
         return {0.0F, 0.0F, 0.55F, 1.0F, 0.45F, 0.95F};
+    }
+    if (name == IndicatorColumns::RSI12) {
+        return {0.0F, 0.0F, 1.0F, 0.82F, 0.28F, 0.95F};
+    }
+    if (name == IndicatorColumns::RSI24) {
+        return {0.0F, 0.0F, 0.42F, 0.68F, 1.0F, 0.95F};
+    }
+    if (name == IndicatorColumns::RSI) {
+        return {0.0F, 0.0F, 0.72F, 1.0F, 0.72F, 0.85F};
     }
     return {0.0F, 0.0F, 0.72F, 0.72F, 0.72F, 0.9F};
 }

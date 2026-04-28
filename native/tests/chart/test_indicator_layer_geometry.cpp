@@ -33,6 +33,9 @@ tradereview::data::CandleWindow sample_window()
     window.indicators[std::string{tradereview::data::IndicatorColumns::MACD}] = {-0.3, -0.1, 0.2, 0.4};
     window.indicators[std::string{tradereview::data::IndicatorColumns::MACD_Signal}] = {-0.2, -0.1, 0.1, 0.25};
     window.indicators[std::string{tradereview::data::IndicatorColumns::MACD_Hist}] = {-0.1, 0.0, 0.1, 0.15};
+    window.indicators[std::string{tradereview::data::IndicatorColumns::RSI6}] = {42.0, 56.0, 68.0, 62.0};
+    window.indicators[std::string{tradereview::data::IndicatorColumns::RSI12}] = {44.0, 54.0, 64.0, 60.0};
+    window.indicators[std::string{tradereview::data::IndicatorColumns::RSI24}] = {46.0, 52.0, 60.0, 58.0};
     window.indicators[std::string{tradereview::data::IndicatorColumns::RSI}] = {45.0, 55.0, 65.0, 60.0};
     return window;
 }
@@ -98,6 +101,25 @@ void test_rsi_geometry_uses_rsi_pane()
     tradereview::core::assert_true(vertices_inside(geometry.vertices, layout.rsi), "RSI indicator stays in RSI pane");
 }
 
+void test_multi_period_rsi_geometry_uses_rsi_pane()
+{
+    const auto window = sample_window();
+    const auto layout = tradereview::chart::build_pane_layout(true);
+
+    const auto geometry = tradereview::chart::rendering::build_panel_indicator_geometry(
+        window,
+        {0.0, 3.0},
+        layout.rsi,
+        {
+            std::string{tradereview::data::IndicatorColumns::RSI6},
+            std::string{tradereview::data::IndicatorColumns::RSI12},
+            std::string{tradereview::data::IndicatorColumns::RSI24},
+        });
+
+    tradereview::core::assert_equal(geometry.vertices.size(), std::size_t{18}, "multi-period RSI lines");
+    tradereview::core::assert_true(vertices_inside(geometry.vertices, layout.rsi), "multi-period RSI stays in RSI pane");
+}
+
 void test_histogram_geometry_splits_positive_and_negative_bars()
 {
     const auto window = sample_window();
@@ -124,6 +146,9 @@ struct RegisterIndicatorGeometryTests {
         tradereview::tests::register_test(
             "RSI geometry uses RSI pane",
             test_rsi_geometry_uses_rsi_pane);
+        tradereview::tests::register_test(
+            "multi-period RSI geometry uses RSI pane",
+            test_multi_period_rsi_geometry_uses_rsi_pane);
         tradereview::tests::register_test(
             "histogram geometry splits positive and negative bars",
             test_histogram_geometry_splits_positive_and_negative_bars);

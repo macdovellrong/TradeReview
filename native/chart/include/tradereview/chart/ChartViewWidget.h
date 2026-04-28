@@ -20,6 +20,7 @@
 
 class QKeyEvent;
 class QMouseEvent;
+class QPainter;
 class QWheelEvent;
 
 namespace tradereview::chart {
@@ -72,6 +73,10 @@ private:
     void initializeGL() override;
     void resizeGL(int width, int height) override;
     void paintGL() override;
+    void draw_chart_overlays(QPainter& painter) const;
+    void draw_time_axis(QPainter& painter) const;
+    void draw_crosshair(QPainter& painter) const;
+    void draw_fib_labels(QPainter& painter) const;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;

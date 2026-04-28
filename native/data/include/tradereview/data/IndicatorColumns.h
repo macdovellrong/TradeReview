@@ -18,9 +18,12 @@ struct IndicatorColumns {
     static constexpr std::string_view MACD = "MACD";
     static constexpr std::string_view MACD_Signal = "MACD_Signal";
     static constexpr std::string_view MACD_Hist = "MACD_Hist";
+    static constexpr std::string_view RSI6 = "RSI6";
+    static constexpr std::string_view RSI12 = "RSI12";
+    static constexpr std::string_view RSI24 = "RSI24";
     static constexpr std::string_view RSI = "RSI";
 
-    [[nodiscard]] static constexpr std::array<std::string_view, 13> all()
+    [[nodiscard]] static constexpr std::array<std::string_view, 16> all()
     {
         return {
             EMA20,
@@ -35,6 +38,9 @@ struct IndicatorColumns {
             MACD,
             MACD_Signal,
             MACD_Hist,
+            RSI6,
+            RSI12,
+            RSI24,
             RSI};
     }
 };

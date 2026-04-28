@@ -5,6 +5,7 @@ add_library(tradereview_chart STATIC
     src/ChartToolbarWidget.cpp
     src/ChartWorkspaceWidget.cpp
     src/ChartWorkspaceState.cpp
+    src/ChartOverlayGeometry.cpp
     src/ChartSceneModel.cpp
     src/ChartInteractionController.cpp
     src/ChartIndexMapper.cpp

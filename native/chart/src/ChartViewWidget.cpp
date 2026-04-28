@@ -1,22 +1,33 @@
 #include "tradereview/chart/ChartViewWidget.h"
 
+#include "tradereview/chart/ChartOverlayGeometry.h"
 #include "tradereview/chart/DrawingInput.h"
 #include "tradereview/chart/PaneLayout.h"
+#include "tradereview/drawing/FibMath.h"
 
 #include <QColor>
+#include <QDateTime>
+#include <QFont>
+#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QPainter>
+#include <QPen>
+#include <QRectF>
 #include <QString>
+#include <QTimeZone>
 #include <QWheelEvent>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace tradereview::chart {
 namespace {
@@ -105,6 +116,111 @@ namespace {
 [[nodiscard]] QColor loadingOverlay()
 {
     return QColor(15, 18, 24, 132);
+}
+
+[[nodiscard]] QColor overlayLineColor()
+{
+    return QColor(196, 208, 224, 150);
+}
+
+[[nodiscard]] QColor overlaySubtleLineColor()
+{
+    return QColor(82, 96, 118, 150);
+}
+
+[[nodiscard]] QColor overlayBoxFill()
+{
+    return QColor(10, 14, 21, 220);
+}
+
+[[nodiscard]] QColor fibLabelColor()
+{
+    return QColor(244, 204, 96);
+}
+
+[[nodiscard]] QString format_axis_timestamp(std::int64_t timestamp_ns, std::int64_t visible_span_ns)
+{
+    constexpr std::int64_t kSecondNs = 1'000'000'000LL;
+    constexpr std::int64_t kHourNs = 60LL * 60LL * kSecondNs;
+    constexpr std::int64_t kDayNs = 24LL * kHourNs;
+    constexpr std::int64_t kYearNs = 365LL * kDayNs;
+
+    const auto timestamp_ms = timestamp_ns / 1'000'000LL;
+    const auto date_time = QDateTime::fromMSecsSinceEpoch(timestamp_ms, QTimeZone::UTC);
+    const auto span = std::llabs(visible_span_ns);
+    if (span >= kYearNs) {
+        return date_time.toString("yyyy-MM");
+    }
+    if (span >= kDayNs) {
+        return date_time.toString("MM-dd HH:mm");
+    }
+    if (span >= kHourNs) {
+        return date_time.toString("HH:mm");
+    }
+    return date_time.toString("HH:mm:ss");
+}
+
+[[nodiscard]] QString format_price(double price)
+{
+    const auto abs_price = std::abs(price);
+    const auto decimals = abs_price >= 100.0 ? 2 : 4;
+    return QString::number(price, 'f', decimals);
+}
+
+void draw_boxed_text(
+    QPainter& painter,
+    QRectF rect,
+    const QString& text,
+    QColor text_color,
+    Qt::Alignment alignment = Qt::AlignCenter)
+{
+    painter.save();
+    painter.setPen(QPen(overlaySubtleLineColor(), 1.0));
+    painter.setBrush(overlayBoxFill());
+    painter.drawRoundedRect(rect, 4.0, 4.0);
+    painter.setPen(text_color);
+    painter.drawText(rect, alignment, text);
+    painter.restore();
+}
+
+void draw_label_at(
+    QPainter& painter,
+    const QString& text,
+    QPointF anchor,
+    int widget_width,
+    int widget_height,
+    QColor text_color,
+    bool center_x)
+{
+    const QFontMetrics metrics(painter.font());
+    const auto width = static_cast<double>(metrics.horizontalAdvance(text) + 12);
+    const auto height = static_cast<double>(metrics.height() + 4);
+    auto x = center_x ? anchor.x() - (width * 0.5) : anchor.x();
+    auto y = anchor.y() - (height * 0.5);
+    x = std::clamp(x, 4.0, std::max(4.0, static_cast<double>(widget_width) - width - 4.0));
+    y = std::clamp(y, 4.0, std::max(4.0, static_cast<double>(widget_height) - height - 4.0));
+    draw_boxed_text(painter, QRectF{x, y, width, height}, text, text_color);
+}
+
+[[nodiscard]] std::optional<std::pair<double, double>> pane_pixel_bounds(PaneRect pane, int widget_height)
+{
+    if (widget_height <= 0) {
+        return std::nullopt;
+    }
+    auto top = widget_y_for_normalized_device_y(pane.top, widget_height);
+    auto bottom = widget_y_for_normalized_device_y(pane.bottom, widget_height);
+    if (bottom < top) {
+        std::swap(top, bottom);
+    }
+    return std::pair{top, bottom};
+}
+
+[[nodiscard]] std::vector<double> fib_levels_for_spec(const drawing::DrawingSpec& spec)
+{
+    if (spec.fib_snapshot.has_value()) {
+        return spec.fib_snapshot->levels;
+    }
+    return {};
 }
 
 void drawCenteredOverlay(QOpenGLWidget& widget, const QString& text, QColor fill, QColor pen)
@@ -403,11 +519,201 @@ void ChartViewWidget::paintGL()
         return;
     }
 
+    if (scene_model_.row_count() > 0) {
+        QPainter painter(this);
+        draw_chart_overlays(painter);
+    }
+
     if (!scene_model_.loading()) {
         return;
     }
 
     drawCenteredOverlay(*this, "Loading...", loadingOverlay(), QColor(235, 238, 245));
+}
+
+void ChartViewWidget::draw_chart_overlays(QPainter& painter) const
+{
+    auto font = painter.font();
+    font.setPointSize(9);
+    painter.setFont(font);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    draw_time_axis(painter);
+    draw_fib_labels(painter);
+    draw_crosshair(painter);
+}
+
+void ChartViewWidget::draw_time_axis(QPainter& painter) const
+{
+    if (scene_model_.index_mapper().empty() || width() <= 0 || height() <= 0) {
+        return;
+    }
+
+    const auto range = normalized_visible_range(scene_model_.visible_dense_range());
+    const auto start_ns = scene_model_.index_mapper().timestamp_from_x(range.start_x);
+    const auto end_ns = scene_model_.index_mapper().timestamp_from_x(range.end_x);
+    const auto visible_span_ns = end_ns - start_ns;
+    const auto label_count = std::clamp(width() / 160, 3, 6);
+    const auto axis_top = static_cast<double>(height() - 24);
+
+    painter.save();
+    painter.fillRect(QRectF{0.0, axis_top, static_cast<double>(width()), 24.0}, QColor(5, 9, 14, 170));
+    painter.setPen(QPen(overlaySubtleLineColor(), 1.0));
+    painter.drawLine(QPointF{0.0, axis_top}, QPointF{static_cast<double>(width()), axis_top});
+
+    const QFontMetrics metrics(painter.font());
+    painter.setPen(chartOverlayText());
+    for (int index = 0; index < label_count; ++index) {
+        const auto fraction = label_count == 1 ? 0.0 : static_cast<double>(index) / static_cast<double>(label_count - 1);
+        const auto dense_x = range.start_x + (range.span() * fraction);
+        auto x = widget_x_for_dense_x(range, width(), dense_x);
+        x = std::clamp(x, 2.0, std::max(2.0, static_cast<double>(width()) - 2.0));
+
+        painter.setPen(QPen(overlaySubtleLineColor(), 1.0));
+        painter.drawLine(QPointF{x, axis_top}, QPointF{x, axis_top + 4.0});
+
+        const auto label = format_axis_timestamp(scene_model_.index_mapper().timestamp_from_x(dense_x), visible_span_ns);
+        const auto text_width = static_cast<double>(metrics.horizontalAdvance(label));
+        auto text_x = x - (text_width * 0.5);
+        text_x = std::clamp(text_x, 4.0, std::max(4.0, static_cast<double>(width()) - text_width - 4.0));
+        painter.setPen(chartOverlayText());
+        painter.drawText(QPointF{text_x, static_cast<double>(height() - 7)}, label);
+    }
+    painter.restore();
+}
+
+void ChartViewWidget::draw_crosshair(QPainter& painter) const
+{
+    if (!crosshair_state_.has_value() || scene_model_.index_mapper().empty() || width() <= 0 || height() <= 0) {
+        return;
+    }
+
+    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    if (!price_range.has_value()) {
+        return;
+    }
+
+    const auto layout = build_pane_layout(scene_model_.indicator_panels_enabled());
+    const auto x = widget_x_for_dense_x(scene_model_.visible_dense_range(), width(), crosshair_state_->dense_x);
+    const auto y = widget_y_for_price(layout.price, height(), price_range->first, price_range->second, crosshair_state_->price);
+    if (x < 0.0 || x > static_cast<double>(width()) || !y.has_value()) {
+        return;
+    }
+
+    painter.save();
+    painter.setPen(QPen(overlayLineColor(), 1.0, Qt::DashLine));
+    painter.drawLine(QPointF{x, 0.0}, QPointF{x, static_cast<double>(height())});
+    if (*y >= 0.0 && *y <= static_cast<double>(height())) {
+        painter.drawLine(QPointF{0.0, *y}, QPointF{static_cast<double>(width()), *y});
+    }
+
+    const auto label_span = scene_model_.index_mapper().timestamp_from_x(scene_model_.visible_dense_range().end_x)
+        - scene_model_.index_mapper().timestamp_from_x(scene_model_.visible_dense_range().start_x);
+    draw_label_at(
+        painter,
+        format_axis_timestamp(crosshair_state_->timestamp_ns, label_span),
+        QPointF{x, static_cast<double>(height() - 12)},
+        width(),
+        height(),
+        QColor(235, 238, 245),
+        true);
+
+    if (*y >= 0.0 && *y <= static_cast<double>(height())) {
+        draw_label_at(
+            painter,
+            format_price(crosshair_state_->price),
+            QPointF{static_cast<double>(width() - 74), *y},
+            width(),
+            height(),
+            QColor(235, 238, 245),
+            false);
+    }
+    painter.restore();
+}
+
+void ChartViewWidget::draw_fib_labels(QPainter& painter) const
+{
+    if (scene_model_.index_mapper().empty() || width() <= 0 || height() <= 0) {
+        return;
+    }
+
+    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    if (!price_range.has_value()) {
+        return;
+    }
+
+    const auto layout = build_pane_layout(scene_model_.indicator_panels_enabled());
+    const auto price_bounds = pane_pixel_bounds(layout.price, height());
+    if (!price_bounds.has_value()) {
+        return;
+    }
+
+    const auto draw_spec_labels = [&](const drawing::DrawingSpec& spec) {
+        const auto levels = fib_levels_for_spec(spec);
+        if (levels.empty()) {
+            return;
+        }
+
+        if (spec.type == drawing::DrawingType::FibRetracement && spec.points.size() >= 2) {
+            const auto x1 = scene_model_.index_mapper().dense_x_from_timestamp(spec.points[0].timestamp_ns);
+            const auto x2 = scene_model_.index_mapper().dense_x_from_timestamp(spec.points[1].timestamp_ns);
+            const auto label_x =
+                std::max(
+                    widget_x_for_dense_x(scene_model_.visible_dense_range(), width(), x1),
+                    widget_x_for_dense_x(scene_model_.visible_dense_range(), width(), x2))
+                + 8.0;
+
+            for (const auto& level : drawing::build_retracement_levels(spec.points[0].price, spec.points[1].price, levels)) {
+                const auto y = widget_y_for_price(layout.price, height(), price_range->first, price_range->second, level.price);
+                if (!y.has_value() || *y < price_bounds->first || *y > price_bounds->second) {
+                    continue;
+                }
+                draw_label_at(
+                    painter,
+                    QString::fromStdString(format_fib_ratio_label(level.ratio)),
+                    QPointF{label_x, *y},
+                    width(),
+                    height(),
+                    fibLabelColor(),
+                    false);
+            }
+            return;
+        }
+
+        if (spec.type == drawing::DrawingType::FibExtension && spec.points.size() >= 3) {
+            const auto x_a = scene_model_.index_mapper().dense_x_from_timestamp(spec.points[0].timestamp_ns);
+            const auto x_b = scene_model_.index_mapper().dense_x_from_timestamp(spec.points[1].timestamp_ns);
+            const auto x_c = scene_model_.index_mapper().dense_x_from_timestamp(spec.points[2].timestamp_ns);
+            const auto projection_span = std::max(std::abs(x_b - x_a), 1.0);
+            const auto label_x = widget_x_for_dense_x(scene_model_.visible_dense_range(), width(), x_c + projection_span) + 8.0;
+
+            for (const auto& level : drawing::build_extension_levels(
+                     spec.points[0].price,
+                     spec.points[1].price,
+                     spec.points[2].price,
+                     levels)) {
+                const auto y = widget_y_for_price(layout.price, height(), price_range->first, price_range->second, level.price);
+                if (!y.has_value() || *y < price_bounds->first || *y > price_bounds->second) {
+                    continue;
+                }
+                draw_label_at(
+                    painter,
+                    QString::fromStdString(format_fib_ratio_label(level.ratio)),
+                    QPointF{label_x, *y},
+                    width(),
+                    height(),
+                    fibLabelColor(),
+                    false);
+            }
+        }
+    };
+
+    for (const auto& spec : drawing_state_.drawings()) {
+        draw_spec_labels(spec);
+    }
+    if (const auto preview = drawing_state_.preview(); preview.has_value()) {
+        draw_spec_labels(*preview);
+    }
 }
 
 void ChartViewWidget::mousePressEvent(QMouseEvent* event)

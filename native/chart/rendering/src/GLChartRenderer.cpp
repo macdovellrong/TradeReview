@@ -130,7 +130,12 @@ void GLChartRenderer::render(
             scene_model.window(),
             scene_model.visible_dense_range(),
             layout.rsi,
-            {std::string{data::IndicatorColumns::RSI}});
+            {
+                std::string{data::IndicatorColumns::RSI6},
+                std::string{data::IndicatorColumns::RSI12},
+                std::string{data::IndicatorColumns::RSI24},
+                std::string{data::IndicatorColumns::RSI},
+            });
         indicators.vertices.insert(indicators.vertices.end(), rsi_lines.vertices.begin(), rsi_lines.vertices.end());
     }
 

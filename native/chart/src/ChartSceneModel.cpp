@@ -131,6 +131,9 @@ std::vector<std::string> ChartSceneModel::requested_indicators() const
         append_unique(indicators, std::string{data::IndicatorColumns::MACD});
         append_unique(indicators, std::string{data::IndicatorColumns::MACD_Signal});
         append_unique(indicators, std::string{data::IndicatorColumns::MACD_Hist});
+        append_unique(indicators, std::string{data::IndicatorColumns::RSI6});
+        append_unique(indicators, std::string{data::IndicatorColumns::RSI12});
+        append_unique(indicators, std::string{data::IndicatorColumns::RSI24});
         append_unique(indicators, std::string{data::IndicatorColumns::RSI});
     }
     return indicators;

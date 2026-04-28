@@ -132,6 +132,9 @@ void test_scene_model_tracks_indicator_visibility_and_requested_columns()
     tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::EMA20), "EMA20 requested by default");
     tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::BB_Upper), "BB upper requested by default");
     tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::MACD_Hist), "MACD histogram requested by default");
+    tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::RSI6), "RSI6 requested by default");
+    tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::RSI12), "RSI12 requested by default");
+    tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::RSI24), "RSI24 requested by default");
     tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::RSI), "RSI requested by default");
     tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::EMA100), "EMA100 disabled by default");
 
@@ -144,6 +147,9 @@ void test_scene_model_tracks_indicator_visibility_and_requested_columns()
     tradereview::core::assert_true(contains(requested, tradereview::data::IndicatorColumns::EMA100), "EMA100 requested when enabled");
     tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::BB_Upper), "BB upper not requested when disabled");
     tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::MACD), "MACD not requested when panels disabled");
+    tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::RSI6), "RSI6 not requested when panels disabled");
+    tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::RSI12), "RSI12 not requested when panels disabled");
+    tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::RSI24), "RSI24 not requested when panels disabled");
     tradereview::core::assert_true(!contains(requested, tradereview::data::IndicatorColumns::RSI), "RSI not requested when panels disabled");
     tradereview::core::assert_equal(model.revision(), revision_before + 3, "indicator changes increment revision");
 }
