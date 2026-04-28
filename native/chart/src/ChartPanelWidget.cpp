@@ -103,6 +103,11 @@ bool ChartPanelWidget::apply_window(data::CandleWindow window)
     return chart_view_->apply_window(std::move(window));
 }
 
+void ChartPanelWidget::trigger_drawing_action(const QString& action)
+{
+    handle_drawing_action(action);
+}
+
 ChartViewWidget& ChartPanelWidget::chart_view()
 {
     return *chart_view_;

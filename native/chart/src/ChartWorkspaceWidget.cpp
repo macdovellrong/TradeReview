@@ -110,6 +110,16 @@ bool ChartWorkspaceWidget::apply_window(data::CandleWindow window)
     return target_panel->apply_window(std::move(window));
 }
 
+bool ChartWorkspaceWidget::triggerDrawingAction(const QString& action)
+{
+    auto* active_panel = panel(active_chart_id());
+    if (active_panel == nullptr) {
+        return false;
+    }
+    active_panel->trigger_drawing_action(action);
+    return true;
+}
+
 ChartViewWidget& ChartWorkspaceWidget::chart_view()
 {
     return chart_view(state_.active_chart_id());

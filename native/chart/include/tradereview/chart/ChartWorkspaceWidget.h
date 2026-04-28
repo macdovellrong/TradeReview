@@ -36,6 +36,7 @@ public:
     bool setRequestedPeriod(std::uint64_t chart_id, std::string period);
     bool setChartLoading(std::uint64_t chart_id, bool loading);
     bool apply_window(data::CandleWindow window);
+    bool triggerDrawingAction(const QString& action);
     [[nodiscard]] ChartViewWidget& chart_view();
     [[nodiscard]] const ChartViewWidget& chart_view() const;
     [[nodiscard]] ChartViewWidget& chart_view(std::uint64_t chart_id);

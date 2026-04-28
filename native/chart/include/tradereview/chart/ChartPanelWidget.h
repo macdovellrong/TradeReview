@@ -30,6 +30,7 @@ public:
     void setPeriodChangedCallback(PeriodChangedCallback callback);
     bool set_loading(bool loading);
     bool apply_window(data::CandleWindow window);
+    void trigger_drawing_action(const QString& action);
     [[nodiscard]] ChartViewWidget& chart_view();
     [[nodiscard]] const ChartViewWidget& chart_view() const;
     [[nodiscard]] std::vector<std::string> requested_indicators() const;

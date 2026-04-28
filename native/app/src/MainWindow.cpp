@@ -7,6 +7,7 @@
 #include "tradereview/app/SideInfoPanelWidget.h"
 #include "tradereview/app/StatusStripWidget.h"
 #include "tradereview/app/TimeNavigation.h"
+#include "tradereview/chart/DrawingToolRailWidget.h"
 #include "tradereview/chart/ChartViewWidget.h"
 #include "tradereview/chart/ChartWorkspaceWidget.h"
 
@@ -154,6 +155,13 @@ MainWindow::MainWindow(QWidget* parent)
     auto* workspace_layout = new QHBoxLayout(workspace);
     workspace_layout->setContentsMargins(0, 0, 0, 0);
     workspace_layout->setSpacing(0);
+    auto* drawing_rail = new chart::DrawingToolRailWidget(workspace);
+    drawing_rail->setDrawingActionCallback([this](const QString& action) {
+        if (chart_workspace_ != nullptr && chart_workspace_->triggerDrawingAction(action)) {
+            showStatusMessage(QString("Drawing tool ") + action);
+        }
+    });
+    workspace_layout->addWidget(drawing_rail);
     workspace_layout->addWidget(chart_workspace_, 1);
     workspace_layout->addWidget(side_info_panel_);
 
