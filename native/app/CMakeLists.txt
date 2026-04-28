@@ -24,10 +24,12 @@ target_link_libraries(tradereview_app_logic
 )
 
 qt_add_executable(tradereview_native
+    include/tradereview/app/AppTheme.h
     include/tradereview/app/DataLoadController.h
     include/tradereview/app/MainControlsBar.h
     include/tradereview/app/MainWindow.h
     include/tradereview/app/NativeApp.h
+    src/AppTheme.cpp
     src/DataLoadController.cpp
     src/MainControlsBar.cpp
     src/MainWindow.cpp
