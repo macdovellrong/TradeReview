@@ -1,4 +1,4 @@
-option(TRADEREVIEW_NATIVE_WITH_DUCKDB "Build native data repository with DuckDB C API support" OFF)
+option(TRADEREVIEW_NATIVE_WITH_DUCKDB "Build native data repository with DuckDB C API support" ON)
 
 add_library(tradereview_data STATIC
     src/CandleWindow.cpp
