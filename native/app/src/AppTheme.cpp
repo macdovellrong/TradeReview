@@ -57,6 +57,17 @@ QString styleSheet()
             background-color: #151d27;
             border-bottom: 1px solid #2a3545;
         }
+        QWidget#ToolbarGroup {
+            background-color: transparent;
+        }
+        QScrollArea#PeriodScrollArea {
+            background-color: #151d27;
+            border: none;
+        }
+        QWidget#PeriodScrollViewport,
+        QWidget#PeriodScrollContent {
+            background-color: #151d27;
+        }
         #SideInfoPanelWidget {
             border-left: 1px solid #2a3545;
         }

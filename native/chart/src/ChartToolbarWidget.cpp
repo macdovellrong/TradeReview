@@ -47,11 +47,16 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
 
     auto* periodWidget = new QWidget(this);
     periodWidget->setObjectName("ToolbarGroup");
+    periodWidget->setAttribute(Qt::WA_StyledBackground, true);
     auto* periodGroupLayout = new QHBoxLayout(periodWidget);
     periodGroupLayout->setContentsMargins(0, 0, 8, 0);
     periodGroupLayout->setSpacing(4);
 
     auto* periodScrollArea = new QScrollArea(this);
+    periodScrollArea->setObjectName("PeriodScrollArea");
+    periodScrollArea->setAttribute(Qt::WA_StyledBackground, true);
+    periodScrollArea->viewport()->setObjectName("PeriodScrollViewport");
+    periodScrollArea->viewport()->setAttribute(Qt::WA_StyledBackground, true);
     periodScrollArea->setFixedHeight(kButtonHeight + 6);
     periodScrollArea->setFrameShape(QFrame::NoFrame);
     periodScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -59,6 +64,8 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
     periodScrollArea->setWidgetResizable(true);
 
     auto* periodContent = new QWidget(periodScrollArea);
+    periodContent->setObjectName("PeriodScrollContent");
+    periodContent->setAttribute(Qt::WA_StyledBackground, true);
     auto* periodLayout = new QHBoxLayout(periodContent);
     periodLayout->setContentsMargins(0, 0, 0, 0);
     periodLayout->setSpacing(2);
@@ -87,6 +94,7 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
 
     auto* indicator_widget = new QWidget(this);
     indicator_widget->setObjectName("ToolbarGroup");
+    indicator_widget->setAttribute(Qt::WA_StyledBackground, true);
     auto* indicator_layout = new QHBoxLayout(indicator_widget);
     indicator_layout->setContentsMargins(8, 0, 8, 0);
     indicator_layout->setSpacing(4);
@@ -119,6 +127,7 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
 
     auto* drawing_widget = new QWidget(this);
     drawing_widget->setObjectName("ToolbarGroup");
+    drawing_widget->setAttribute(Qt::WA_StyledBackground, true);
     auto* drawing_layout = new QHBoxLayout(drawing_widget);
     drawing_layout->setContentsMargins(8, 0, 0, 0);
     drawing_layout->setSpacing(4);
