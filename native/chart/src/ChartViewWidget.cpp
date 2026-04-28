@@ -1,13 +1,14 @@
 #include "tradereview/chart/ChartViewWidget.h"
 
-#include "tradereview/app/AppTheme.h"
 #include "tradereview/chart/DrawingInput.h"
 #include "tradereview/chart/PaneLayout.h"
 
+#include <QColor>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QPainter>
+#include <QString>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -89,6 +90,21 @@ namespace {
         max_price = min_price + 1.0;
     }
     return std::pair{min_price, max_price};
+}
+
+[[nodiscard]] QColor chartOverlayBackground()
+{
+    return QColor(11, 16, 23);
+}
+
+[[nodiscard]] QColor chartOverlayText()
+{
+    return QColor(143, 160, 184);
+}
+
+[[nodiscard]] QColor loadingOverlay()
+{
+    return QColor(15, 18, 24, 132);
 }
 
 void drawCenteredOverlay(QOpenGLWidget& widget, const QString& text, QColor fill, QColor pen)
@@ -383,7 +399,7 @@ void ChartViewWidget::paintGL()
     renderer_.render(scene_model_, drawing_state_.drawings(), drawing_state_.preview(), drawing_state_.revision());
 
     if (scene_model_.row_count() == 0 && !scene_model_.loading()) {
-        drawCenteredOverlay(*this, "No dataset loaded", app::theme::chartBackground(), app::theme::chartEmptyText());
+        drawCenteredOverlay(*this, "No dataset loaded", chartOverlayBackground(), chartOverlayText());
         return;
     }
 
@@ -391,7 +407,7 @@ void ChartViewWidget::paintGL()
         return;
     }
 
-    drawCenteredOverlay(*this, "Loading...", app::theme::loadingOverlay(), QColor(235, 238, 245));
+    drawCenteredOverlay(*this, "Loading...", loadingOverlay(), QColor(235, 238, 245));
 }
 
 void ChartViewWidget::mousePressEvent(QMouseEvent* event)
