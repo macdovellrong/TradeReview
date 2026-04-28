@@ -95,3 +95,13 @@ Use a small DuckDB dataset first so failures are easy to isolate.
 - No chart stays permanently in loading state after success or error.
 - No stale data visibly replaces newer data after rapid pan, period switch, or date jump.
 - The final manual run uses a build directory whose CMake cache points at the intended worktree.
+
+## C++ 终端化界面手动验收
+
+- 无数据启动时，主窗口应显示顶部菜单、主控制栏、左侧绘图工具栏、中央图表空状态、右侧信息面板和底部状态栏。
+- 点击未加载数据前的回放/绘图按钮时，不应崩溃；未接线动作应显示明确状态消息。
+- DuckDB OFF 构建加载数据时，仍应弹出错误框，同时底部状态栏和右侧面板保留清晰状态。
+- DuckDB ON 构建加载数据后，右侧面板应显示数据集名称、数据范围、可见范围、布局和回放状态。
+- 切换图表数量和布局模式后，中央图表区、右侧面板和状态栏不应出现文字重叠。
+- 切换周期、EMA、BB、MACD/RSI 后，原有图表刷新和指标开关行为应保持。
+- 左侧 H/V/Line/Fib/Fib Ext/Clear 工具应走现有绘图 action，不新增未定义行为。
