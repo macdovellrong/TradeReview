@@ -112,6 +112,22 @@ QString replayMessage(const ReplayUpdateResult& result)
         .arg(static_cast<qulonglong>(result.ticks_consumed));
 }
 
+QString replaySummary(bool enabled, bool playing, int speed)
+{
+    if (!enabled) {
+        return "Disabled";
+    }
+    return QString("Enabled / %1 / %2x").arg(playing ? "Playing" : "Paused").arg(speed);
+}
+
+QString replaySummary(const ReplayUpdateResult& result, int speed)
+{
+    if (result.reached_end) {
+        return QString("Enabled / Reached end / %1x").arg(speed);
+    }
+    return replaySummary(result.enabled, result.playing, speed);
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -254,11 +270,12 @@ MainWindow::MainWindow(QWidget* parent)
             data_load_controller_->set_replay_enabled(enabled, *chart_workspace_);
             main_controls_->setReplayControlsEnabled(enabled);
             main_controls_->setReplayPlaying(false);
-            side_info_panel_->setReplaySummary(enabled ? "Enabled" : "Disabled");
+            side_info_panel_->setReplaySummary(replaySummary(enabled, false, data_load_controller_->replay_speed()));
             showStatusMessage(enabled ? "Replay Mode enabled" : "Replay Mode disabled");
         } catch (const std::exception& error) {
             main_controls_->setReplayControlsEnabled(false);
             main_controls_->setReplayPlaying(false);
+            side_info_panel_->setReplaySummary("Disabled");
             present_error(this, statusBar(), "Replay Mode", error, false);
         }
     });
@@ -266,9 +283,13 @@ MainWindow::MainWindow(QWidget* parent)
         try {
             const auto playing = data_load_controller_->toggle_replay_playing();
             main_controls_->setReplayPlaying(playing);
+            side_info_panel_->setReplaySummary(
+                replaySummary(data_load_controller_->replay_enabled(), playing, data_load_controller_->replay_speed()));
             showStatusMessage(playing ? "Replay playing" : "Replay paused");
         } catch (const std::exception& error) {
             main_controls_->setReplayPlaying(false);
+            side_info_panel_->setReplaySummary(
+                replaySummary(data_load_controller_->replay_enabled(), false, data_load_controller_->replay_speed()));
             present_error(this, statusBar(), "Replay play", error, false);
         }
     });
@@ -278,10 +299,12 @@ MainWindow::MainWindow(QWidget* parent)
                 const auto result = data_load_controller_->advance_replay_by(delta_ns, *chart_workspace_);
                 main_controls_->setReplayPlaying(result.playing);
                 main_controls_->setDateTimeValue(result.current_time_ns);
+                side_info_panel_->setReplaySummary(replaySummary(result, data_load_controller_->replay_speed()));
                 showStatusMessage(replayMessage(result));
                 return;
             }
 
+            side_info_panel_->setReplaySummary("Manual step");
             const auto status = data_load_controller_->step_time_async(
                 delta_ns,
                 *chart_workspace_,
@@ -293,18 +316,22 @@ MainWindow::MainWindow(QWidget* parent)
                     side_info_panel_->setVisibleRange(
                         formatTimestamp(result.window.visible_range.start_ns) + " to "
                         + formatTimestamp(result.window.visible_range.end_ns));
+                    side_info_panel_->setReplaySummary("Disabled");
                     setReadyStatus(windowMessage(result));
                 });
             main_controls_->setDateTimeValue(data_load_controller_->current_view_center_time_ns(*chart_workspace_));
             setLoadingStatus(pendingMessage(status));
         } catch (const std::exception& error) {
             main_controls_->setReplayPlaying(false);
+            side_info_panel_->setReplaySummary(
+                replaySummary(data_load_controller_->replay_enabled(), false, data_load_controller_->replay_speed()));
             present_error(this, statusBar(), "Step", error, false);
         }
     });
     main_controls_->setReplaySpeedCallback([this](int speed) {
         data_load_controller_->set_replay_speed(speed);
-        side_info_panel_->setReplaySummary(QString("Enabled / %1x").arg(speed));
+        side_info_panel_->setReplaySummary(
+            replaySummary(data_load_controller_->replay_enabled(), data_load_controller_->replay_playing(), speed));
         showStatusMessage(QString("Replay Speed %1x").arg(speed));
     });
     main_controls_->setLoadDataCallback([this]() {
@@ -353,11 +380,14 @@ MainWindow::MainWindow(QWidget* parent)
             const auto result = data_load_controller_->advance_replay_by_speed(*chart_workspace_);
             main_controls_->setReplayPlaying(result.playing);
             main_controls_->setDateTimeValue(result.current_time_ns);
+            side_info_panel_->setReplaySummary(replaySummary(result, data_load_controller_->replay_speed()));
             if (result.reached_end) {
                 showStatusMessage(replayMessage(result));
             }
         } catch (const std::exception& error) {
             main_controls_->setReplayPlaying(false);
+            side_info_panel_->setReplaySummary(
+                replaySummary(data_load_controller_->replay_enabled(), false, data_load_controller_->replay_speed()));
             present_error(this, statusBar(), "Replay timer", error, false);
         }
     });
