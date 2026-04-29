@@ -1,12 +1,12 @@
 #include "tradereview/chart/ChartViewWidget.h"
 
 #include "tradereview/chart/ChartOverlayGeometry.h"
+#include "tradereview/chart/ChartTimeFormat.h"
 #include "tradereview/chart/DrawingInput.h"
 #include "tradereview/chart/PaneLayout.h"
 #include "tradereview/drawing/FibMath.h"
 
 #include <QColor>
-#include <QDateTime>
 #include <QFont>
 #include <QFontMetrics>
 #include <QKeyEvent>
@@ -16,13 +16,11 @@
 #include <QPen>
 #include <QRectF>
 #include <QString>
-#include <QTimeZone>
 #include <QWheelEvent>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdlib>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -138,26 +136,12 @@ namespace {
     return QColor(244, 204, 96);
 }
 
-[[nodiscard]] QString format_axis_timestamp(std::int64_t timestamp_ns, std::int64_t visible_span_ns)
+[[nodiscard]] const std::string& axis_label_period(const data::CandleWindow& window)
 {
-    constexpr std::int64_t kSecondNs = 1'000'000'000LL;
-    constexpr std::int64_t kHourNs = 60LL * 60LL * kSecondNs;
-    constexpr std::int64_t kDayNs = 24LL * kHourNs;
-    constexpr std::int64_t kYearNs = 365LL * kDayNs;
-
-    const auto timestamp_ms = timestamp_ns / 1'000'000LL;
-    const auto date_time = QDateTime::fromMSecsSinceEpoch(timestamp_ms, QTimeZone::UTC);
-    const auto span = std::llabs(visible_span_ns);
-    if (span >= kYearNs) {
-        return date_time.toString("yyyy-MM-dd");
+    if (!window.actual_period.empty()) {
+        return window.actual_period;
     }
-    if (span >= kDayNs) {
-        return date_time.toString("yyyy-MM-dd HH:mm");
-    }
-    if (span >= kHourNs || span >= kSecondNs) {
-        return date_time.toString("yyyy-MM-dd HH:mm");
-    }
-    return date_time.toString("yyyy-MM-dd HH:mm:ss");
+    return window.requested_period;
 }
 
 [[nodiscard]] QString format_price(double price)
@@ -263,11 +247,18 @@ std::uint64_t ChartViewWidget::bump_generation()
 
 bool ChartViewWidget::apply_window(data::CandleWindow window)
 {
+    std::optional<core::TimeRange> panning_visible_range;
+    if (is_panning_ && !scene_model_.index_mapper().empty()) {
+        panning_visible_range = interaction_.visible_time_range(scene_model_.index_mapper());
+    }
+
     if (!scene_model_.apply_window(std::move(window))) {
         return false;
     }
 
-    if (scene_model_.window().has_visible_range()) {
+    if (panning_visible_range.has_value()) {
+        interaction_.reset_for_visible_time_range(scene_model_.index_mapper(), *panning_visible_range);
+    } else if (scene_model_.window().has_visible_range()) {
         interaction_.reset_for_visible_time_range(scene_model_.index_mapper(), scene_model_.window().visible_range);
     } else {
         interaction_.reset_for_row_count(scene_model_.row_count());
@@ -550,9 +541,7 @@ void ChartViewWidget::draw_time_axis(QPainter& painter) const
     }
 
     const auto range = normalized_visible_range(scene_model_.visible_dense_range());
-    const auto start_ns = scene_model_.index_mapper().timestamp_from_x(range.start_x);
-    const auto end_ns = scene_model_.index_mapper().timestamp_from_x(range.end_x);
-    const auto visible_span_ns = end_ns - start_ns;
+    const auto period = axis_label_period(scene_model_.window());
     const auto label_count = std::clamp(width() / 160, 3, 6);
     const auto axis_top = static_cast<double>(height() - 24);
 
@@ -572,7 +561,8 @@ void ChartViewWidget::draw_time_axis(QPainter& painter) const
         painter.setPen(QPen(overlaySubtleLineColor(), 1.0));
         painter.drawLine(QPointF{x, axis_top}, QPointF{x, axis_top + 4.0});
 
-        const auto label = format_axis_timestamp(scene_model_.index_mapper().timestamp_from_x(dense_x), visible_span_ns);
+        const auto label =
+            format_axis_timestamp_label(scene_model_.index_mapper().timestamp_from_x(dense_x), period);
         const auto text_width = static_cast<double>(metrics.horizontalAdvance(label));
         auto text_x = x - (text_width * 0.5);
         text_x = std::clamp(text_x, 4.0, std::max(4.0, static_cast<double>(width()) - text_width - 4.0));
@@ -607,11 +597,9 @@ void ChartViewWidget::draw_crosshair(QPainter& painter) const
         painter.drawLine(QPointF{0.0, *y}, QPointF{static_cast<double>(width()), *y});
     }
 
-    const auto label_span = scene_model_.index_mapper().timestamp_from_x(scene_model_.visible_dense_range().end_x)
-        - scene_model_.index_mapper().timestamp_from_x(scene_model_.visible_dense_range().start_x);
     draw_label_at(
         painter,
-        format_axis_timestamp(crosshair_state_->timestamp_ns, label_span),
+        format_axis_timestamp_label(crosshair_state_->timestamp_ns, axis_label_period(scene_model_.window())),
         QPointF{x, static_cast<double>(height() - 12)},
         width(),
         height(),
@@ -745,7 +733,7 @@ void ChartViewWidget::mouseMoveEvent(QMouseEvent* event)
         const auto current_position = event->position();
         interaction_.pan_by_pixels(current_position.x() - last_mouse_position_.x(), width());
         last_mouse_position_ = current_position;
-        apply_interaction_update();
+        apply_interaction_update(false);
         event->accept();
         return;
     }
@@ -774,6 +762,7 @@ void ChartViewWidget::mouseReleaseEvent(QMouseEvent* event)
     if (event->button() == Qt::LeftButton && is_panning_) {
         is_panning_ = false;
         unsetCursor();
+        apply_interaction_update();
         event->accept();
         return;
     }
@@ -804,21 +793,23 @@ void ChartViewWidget::keyPressEvent(QKeyEvent* event)
     QOpenGLWidget::keyPressEvent(event);
 }
 
-void ChartViewWidget::apply_interaction_update()
+void ChartViewWidget::apply_interaction_update(bool allow_reload)
 {
     const auto range_changed = scene_model_.set_visible_dense_range(interaction_.visible_dense_range());
-    const auto decision = interaction_.reload_decision(scene_model_.index_mapper(), scene_model_.window().loaded_range);
-    if (decision.requested) {
-        const auto repeated_request = has_last_reload_request_
-            && last_reload_request_.start_ns == decision.visible_range.start_ns
-            && last_reload_request_.end_ns == decision.visible_range.end_ns;
-        if (!repeated_request && reload_request_callback_) {
-            reload_request_callback_(decision.visible_range);
+    if (allow_reload) {
+        const auto decision = interaction_.reload_decision(scene_model_.index_mapper(), scene_model_.window().loaded_range);
+        if (decision.requested) {
+            const auto repeated_request = has_last_reload_request_
+                && last_reload_request_.start_ns == decision.visible_range.start_ns
+                && last_reload_request_.end_ns == decision.visible_range.end_ns;
+            if (!repeated_request && reload_request_callback_) {
+                reload_request_callback_(decision.visible_range);
+            }
+            has_last_reload_request_ = true;
+            last_reload_request_ = decision.visible_range;
+        } else {
+            has_last_reload_request_ = false;
         }
-        has_last_reload_request_ = true;
-        last_reload_request_ = decision.visible_range;
-    } else {
-        has_last_reload_request_ = false;
     }
 
     if (range_changed) {

@@ -83,7 +83,7 @@ private:
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void release_renderer();
-    void apply_interaction_update();
+    void apply_interaction_update(bool allow_reload = true);
     [[nodiscard]] std::optional<ChartCrosshairState> crosshair_from_position(QPointF position) const;
     [[nodiscard]] std::optional<drawing::DrawingPoint> drawing_point_from_position(QPointF position) const;
     [[nodiscard]] double dense_x_at_pixel(double pixel_x) const;

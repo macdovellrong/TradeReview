@@ -1,5 +1,6 @@
 add_library(tradereview_chart STATIC
     include/tradereview/chart/DrawingToolRailWidget.h
+    include/tradereview/chart/ChartTimeFormat.h
     src/ChartViewWidget.cpp
     src/ChartPanelWidget.cpp
     src/ChartToolbarWidget.cpp
@@ -8,6 +9,7 @@ add_library(tradereview_chart STATIC
     src/ChartOverlayGeometry.cpp
     src/ChartPeriod.cpp
     src/ChartSceneModel.cpp
+    src/ChartTimeFormat.cpp
     src/ChartInteractionController.cpp
     src/ChartIndexMapper.cpp
     src/DrawingToolRailWidget.cpp

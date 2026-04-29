@@ -7,6 +7,7 @@ add_executable(tradereview_native_tests
     chart/test_chart_overlay_geometry.cpp
     chart/test_chart_period.cpp
     chart/test_chart_scene_model.cpp
+    chart/test_chart_time_format.cpp
     chart/test_chart_workspace_state.cpp
     chart/test_candle_layer_geometry.cpp
     chart/test_drawing_layer_geometry.cpp
