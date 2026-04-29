@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <optional>
+#include <utility>
 #include <string_view>
 
 namespace tradereview::chart::rendering {
@@ -32,6 +34,12 @@ void main()
     out_color = vertex_color;
 }
 )";
+
+constexpr double kRsiMin = 0.0;
+constexpr double kRsiMax = 100.0;
+constexpr double kRsiLowerGuide = 20.0;
+constexpr double kRsiUpperGuide = 80.0;
+constexpr IndicatorVertex kRsiGuideColor{0.0F, 0.0F, 0.46F, 0.54F, 0.66F, 0.42F};
 
 [[nodiscard]] bool finite(double value)
 {
@@ -174,7 +182,8 @@ void add_series_values_to_range(
     DenseRange visible_dense_range,
     PaneRect pane,
     const std::vector<std::string>& series_names,
-    bool include_price_range)
+    bool include_price_range,
+    std::optional<std::pair<double, double>> fixed_value_range = std::nullopt)
 {
     IndicatorGeometry geometry;
     if (window.empty() || !window.has_consistent_columns()) {
@@ -190,7 +199,10 @@ void add_series_values_to_range(
 
     auto min_value = std::numeric_limits<double>::max();
     auto max_value = std::numeric_limits<double>::lowest();
-    if (include_price_range) {
+    if (fixed_value_range.has_value()) {
+        min_value = fixed_value_range->first;
+        max_value = fixed_value_range->second;
+    } else if (include_price_range) {
         for (std::size_t row = first_row; row <= last_row; ++row) {
             if (!finite(window.low[row]) || !finite(window.high[row])) {
                 continue;
@@ -199,7 +211,9 @@ void add_series_values_to_range(
             max_value = std::max(max_value, window.high[row]);
         }
     }
-    add_series_values_to_range(window, series_names, first_row, last_row, min_value, max_value);
+    if (!fixed_value_range.has_value()) {
+        add_series_values_to_range(window, series_names, first_row, last_row, min_value, max_value);
+    }
     if (min_value == std::numeric_limits<double>::max() || max_value == std::numeric_limits<double>::lowest()) {
         return geometry;
     }
@@ -232,6 +246,24 @@ void add_series_values_to_range(
     return geometry;
 }
 
+void append_rsi_guides(IndicatorGeometry& geometry, PaneRect pane)
+{
+    append_segment(
+        geometry,
+        pane.left,
+        mapped_y(kRsiLowerGuide, kRsiMin, kRsiMax, pane),
+        pane.right,
+        mapped_y(kRsiLowerGuide, kRsiMin, kRsiMax, pane),
+        kRsiGuideColor);
+    append_segment(
+        geometry,
+        pane.left,
+        mapped_y(kRsiUpperGuide, kRsiMin, kRsiMax, pane),
+        pane.right,
+        mapped_y(kRsiUpperGuide, kRsiMin, kRsiMax, pane),
+        kRsiGuideColor);
+}
+
 } // namespace
 
 IndicatorGeometry build_price_indicator_geometry(
@@ -250,6 +282,25 @@ IndicatorGeometry build_panel_indicator_geometry(
     const std::vector<std::string>& series_names)
 {
     return build_indicator_geometry(window, visible_dense_range, pane, series_names, false);
+}
+
+IndicatorGeometry build_rsi_indicator_geometry(
+    const data::CandleWindow& window,
+    DenseRange visible_dense_range,
+    PaneRect pane,
+    const std::vector<std::string>& series_names)
+{
+    auto geometry = build_indicator_geometry(
+        window,
+        visible_dense_range,
+        pane,
+        series_names,
+        false,
+        std::optional<std::pair<double, double>>{std::pair{kRsiMin, kRsiMax}});
+    if (!geometry.vertices.empty()) {
+        append_rsi_guides(geometry, pane);
+    }
+    return geometry;
 }
 
 void IndicatorLayer::initialize(QOpenGLFunctions_3_3_Core& gl)

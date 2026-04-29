@@ -1,5 +1,6 @@
 #include "tradereview/chart/ChartPanelWidget.h"
 
+#include "tradereview/chart/ChartPeriod.h"
 #include "tradereview/chart/ChartViewWidget.h"
 #include "tradereview/drawing/DrawingSpec.h"
 
@@ -20,19 +21,12 @@ std::string to_string(const QString& text)
 
 std::string canonical_period(const QString& period)
 {
-    const auto value = to_string(period);
-    if (value == "1m") {
-        return "1min";
-    }
-    return value;
+    return canonical_chart_period(to_string(period));
 }
 
 QString toolbar_period(const std::string& period)
 {
-    if (period == "1min") {
-        return "1m";
-    }
-    return QString::fromStdString(period);
+    return QString::fromStdString(toolbar_chart_period(period));
 }
 
 } // namespace
@@ -66,7 +60,7 @@ void ChartPanelWidget::set_requested_period(std::string period)
     if (period.empty()) {
         return;
     }
-    requested_period_ = std::move(period);
+    requested_period_ = canonical_chart_period(period);
     toolbar_->setSelectedPeriod(toolbar_period(requested_period_));
 }
 

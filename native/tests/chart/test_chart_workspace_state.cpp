@@ -59,8 +59,8 @@ void test_workspace_state_preserves_each_chart_period()
     tradereview::core::assert_true(state.set_chart_period(1, "1m"), "chart one period changes");
     tradereview::core::assert_true(state.set_chart_period(2, "5m"), "chart two period changes");
     tradereview::core::assert_true(state.set_chart_period(4, "1h"), "chart four period changes");
-    tradereview::core::assert_equal(state.chart_period(1), std::string{"1m"}, "chart one period");
-    tradereview::core::assert_equal(state.chart_period(2), std::string{"5m"}, "chart two period");
+    tradereview::core::assert_equal(state.chart_period(1), std::string{"1min"}, "chart one period");
+    tradereview::core::assert_equal(state.chart_period(2), std::string{"5min"}, "chart two period");
     tradereview::core::assert_equal(state.chart_period(4), std::string{"1h"}, "chart four period");
 
     state.set_chart_count(2);

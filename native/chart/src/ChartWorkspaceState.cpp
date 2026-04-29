@@ -1,5 +1,7 @@
 #include "tradereview/chart/ChartWorkspaceState.h"
 
+#include "tradereview/chart/ChartPeriod.h"
+
 #include <algorithm>
 #include <utility>
 
@@ -115,10 +117,11 @@ bool ChartWorkspaceState::set_active_chart_id(std::uint64_t chart_id)
 bool ChartWorkspaceState::set_chart_period(std::uint64_t chart_id, std::string period)
 {
     auto* slot = chart_slot(chart_id);
-    if (slot == nullptr || period.empty() || slot->requested_period == period) {
+    auto canonical_period = canonical_chart_period(period);
+    if (slot == nullptr || canonical_period.empty() || slot->requested_period == canonical_period) {
         return false;
     }
-    slot->requested_period = std::move(period);
+    slot->requested_period = std::move(canonical_period);
     return true;
 }
 

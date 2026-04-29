@@ -77,6 +77,19 @@ void test_reset_for_visible_time_range_adds_padding_at_last_loaded_candle()
     tradereview::core::assert_near(range.end_x, 119.0, 0.000001, "last loaded candle receives right padding");
 }
 
+void test_reset_for_visible_time_range_preserves_time_beyond_loaded_rows()
+{
+    tradereview::chart::ChartInteractionController controller;
+    const auto mapper = sample_mapper();
+    const auto minute = 60LL * 1'000'000'000LL;
+
+    controller.reset_for_visible_time_range(mapper, {80LL * minute, 150LL * minute});
+    const auto range = controller.visible_dense_range();
+
+    tradereview::core::assert_near(range.start_x, 80.0, 0.000001, "visible start near loaded end");
+    tradereview::core::assert_near(range.end_x, 150.0, 0.000001, "visible end preserves extrapolated time");
+}
+
 void test_zoom_at_pixel_preserves_anchor()
 {
     tradereview::chart::ChartInteractionController controller;
@@ -155,6 +168,9 @@ struct RegisterChartInteractionTests {
         tradereview::tests::register_test(
             "interaction reset for visible time range adds padding at last loaded candle",
             test_reset_for_visible_time_range_adds_padding_at_last_loaded_candle);
+        tradereview::tests::register_test(
+            "interaction reset for visible time range preserves time beyond loaded rows",
+            test_reset_for_visible_time_range_preserves_time_beyond_loaded_rows);
         tradereview::tests::register_test(
             "interaction zoom at pixel preserves anchor",
             test_zoom_at_pixel_preserves_anchor);

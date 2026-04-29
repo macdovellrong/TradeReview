@@ -1,6 +1,7 @@
 #include "tradereview/chart/ChartWorkspaceWidget.h"
 
 #include "tradereview/chart/ChartPanelWidget.h"
+#include "tradereview/chart/ChartPeriod.h"
 #include "tradereview/chart/ChartViewWidget.h"
 
 #include <QGridLayout>
@@ -83,8 +84,9 @@ bool ChartWorkspaceWidget::setRequestedPeriod(std::uint64_t chart_id, std::strin
         return false;
     }
 
-    const auto changed = state_.set_chart_period(chart_id, period);
-    target_panel->set_requested_period(std::move(period));
+    auto canonical_period = canonical_chart_period(period);
+    const auto changed = state_.set_chart_period(chart_id, canonical_period);
+    target_panel->set_requested_period(std::move(canonical_period));
     return changed;
 }
 
@@ -345,7 +347,7 @@ void ChartWorkspaceWidget::connect_panel(ChartPanelWidget& panel_widget)
         }
     });
     panel_widget.setPeriodChangedCallback([this](std::uint64_t chart_id, const std::string& period) {
-        state_.set_chart_period(chart_id, period);
+        state_.set_chart_period(chart_id, canonical_chart_period(period));
     });
     panel_widget.chart_view().set_crosshair_moved_callback([this, chart_id](std::int64_t timestamp_ns, double price) {
         crosshair_sync_controller_.sync_crosshair_from(chart_id, timestamp_ns, price);

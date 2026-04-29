@@ -149,15 +149,15 @@ namespace {
     const auto date_time = QDateTime::fromMSecsSinceEpoch(timestamp_ms, QTimeZone::UTC);
     const auto span = std::llabs(visible_span_ns);
     if (span >= kYearNs) {
-        return date_time.toString("yyyy-MM");
+        return date_time.toString("yyyy-MM-dd");
     }
     if (span >= kDayNs) {
-        return date_time.toString("MM-dd HH:mm");
+        return date_time.toString("yyyy-MM-dd HH:mm");
     }
-    if (span >= kHourNs) {
-        return date_time.toString("HH:mm");
+    if (span >= kHourNs || span >= kSecondNs) {
+        return date_time.toString("yyyy-MM-dd HH:mm");
     }
-    return date_time.toString("HH:mm:ss");
+    return date_time.toString("yyyy-MM-dd HH:mm:ss");
 }
 
 [[nodiscard]] QString format_price(double price)

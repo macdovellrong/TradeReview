@@ -126,7 +126,7 @@ void GLChartRenderer::render(
     }
 
     if (layout.rsi_visible) {
-        auto rsi_lines = build_panel_indicator_geometry(
+        auto rsi_lines = build_rsi_indicator_geometry(
             scene_model.window(),
             scene_model.visible_dense_range(),
             layout.rsi,

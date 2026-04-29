@@ -76,12 +76,13 @@ void ChartInteractionController::reset_for_visible_time_range(const ChartIndexMa
         return;
     }
 
-    auto start_x = static_cast<double>(mapper.nearest_dense_x(visible_range.start_ns));
-    auto end_x = static_cast<double>(mapper.nearest_dense_x(visible_range.end_ns));
+    auto start_x = mapper.dense_x_from_timestamp(visible_range.start_ns);
+    auto end_x = mapper.dense_x_from_timestamp(visible_range.end_ns);
     const auto last_dense_x = static_cast<double>(mapper.row_count() - 1);
     try {
-        if (visible_range.end_ns >= mapper.timestamp_at_dense_x(static_cast<int>(last_dense_x))) {
-            end_x = last_dense_x + static_cast<double>(right_padding_bars_);
+        const auto last_timestamp = mapper.timestamp_at_dense_x(static_cast<int>(last_dense_x));
+        if (visible_range.end_ns >= last_timestamp) {
+            end_x = std::max(end_x, last_dense_x + static_cast<double>(right_padding_bars_));
         }
     } catch (const std::exception&) {
         end_x = std::max(end_x, last_dense_x);

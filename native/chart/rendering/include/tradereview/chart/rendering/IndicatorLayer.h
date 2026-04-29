@@ -39,6 +39,12 @@ struct IndicatorGeometry {
     PaneRect pane,
     const std::vector<std::string>& series_names);
 
+[[nodiscard]] IndicatorGeometry build_rsi_indicator_geometry(
+    const data::CandleWindow& window,
+    DenseRange visible_dense_range,
+    PaneRect pane,
+    const std::vector<std::string>& series_names);
+
 class IndicatorLayer final {
 public:
     void initialize(QOpenGLFunctions_3_3_Core& gl);

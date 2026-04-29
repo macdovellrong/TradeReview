@@ -106,7 +106,7 @@ void test_multi_period_rsi_geometry_uses_rsi_pane()
     const auto window = sample_window();
     const auto layout = tradereview::chart::build_pane_layout(true);
 
-    const auto geometry = tradereview::chart::rendering::build_panel_indicator_geometry(
+    const auto geometry = tradereview::chart::rendering::build_rsi_indicator_geometry(
         window,
         {0.0, 3.0},
         layout.rsi,
@@ -116,7 +116,7 @@ void test_multi_period_rsi_geometry_uses_rsi_pane()
             std::string{tradereview::data::IndicatorColumns::RSI24},
         });
 
-    tradereview::core::assert_equal(geometry.vertices.size(), std::size_t{18}, "multi-period RSI lines");
+    tradereview::core::assert_equal(geometry.vertices.size(), std::size_t{22}, "multi-period RSI lines and guides");
     tradereview::core::assert_true(vertices_inside(geometry.vertices, layout.rsi), "multi-period RSI stays in RSI pane");
 }
 
