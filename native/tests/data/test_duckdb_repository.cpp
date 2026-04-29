@@ -125,6 +125,7 @@ void test_duckdb_repository_reads_metadata_and_candle_window()
     request.generation = 7;
     request.requested_period = "1min";
     request.visible_range = {1704067200000001000, 1704067260000001000};
+    request.buffer_multiplier = 0.0;
     request.requested_indicators = {
         std::string{tradereview::data::IndicatorColumns::EMA20},
         std::string{tradereview::data::IndicatorColumns::MACD},
@@ -140,6 +141,8 @@ void test_duckdb_repository_reads_metadata_and_candle_window()
     tradereview::core::assert_equal(window.timestamp_ns.front(), std::int64_t{1704067200000001000}, "first candle time");
     tradereview::core::assert_equal(window.timestamp_ns.back(), std::int64_t{1704067260000001000}, "last candle time");
     tradereview::core::assert_near(window.close.back(), 101.5, 0.000001, "last close");
+    tradereview::core::assert_equal(window.visible_range.start_ns, request.visible_range.start_ns, "visible start preserved");
+    tradereview::core::assert_equal(window.visible_range.end_ns, request.visible_range.end_ns, "visible end preserved");
     tradereview::core::assert_true(window.indicators.contains("EMA20"), "EMA20 returned");
     tradereview::core::assert_true(!window.indicators.contains("MACD"), "missing MACD skipped");
     tradereview::core::assert_true(window.indicators.contains("RSI"), "RSI returned");
@@ -169,6 +172,33 @@ void test_duckdb_repository_reads_metadata_and_candle_window()
     tradereview::core::assert_equal(final_chunk.ticks.timestamp_ns.size(), std::size_t{1}, "final replay chunk tick count");
     tradereview::core::assert_equal(final_chunk.ticks.timestamp_ns.back(), std::int64_t{1704067320000001000}, "final replay tick");
     tradereview::core::assert_true(final_chunk.reached_end, "final replay chunk reaches dataset end");
+
+    std::filesystem::remove(path);
+    std::filesystem::remove(path.string() + ".wal");
+}
+
+void test_duckdb_repository_applies_candle_window_buffer()
+{
+    const auto path = test_database_path();
+    create_repository_smoke_database(path);
+
+    tradereview::data::DuckDbRepository repository;
+    static_cast<void>(repository.open_readonly(path.string()));
+
+    tradereview::data::CandleWindowRequest request;
+    request.requested_period = "1min";
+    request.visible_range = {1704067260000001000, 1704067320000001000};
+    request.buffer_multiplier = 1.0;
+
+    const auto window = repository.query_candles(request);
+
+    tradereview::core::assert_equal(window.row_count(), std::size_t{3}, "buffered row count");
+    tradereview::core::assert_equal(window.timestamp_ns.front(), std::int64_t{1704067200000001000}, "buffered first candle");
+    tradereview::core::assert_equal(window.timestamp_ns.back(), std::int64_t{1704067320000001000}, "buffered last candle");
+    tradereview::core::assert_equal(window.loaded_range.start_ns, std::int64_t{1704067200000001000}, "buffered loaded start");
+    tradereview::core::assert_equal(window.loaded_range.end_ns, std::int64_t{1704067320000001000}, "buffered loaded end");
+    tradereview::core::assert_equal(window.visible_range.start_ns, request.visible_range.start_ns, "buffer visible start preserved");
+    tradereview::core::assert_equal(window.visible_range.end_ns, request.visible_range.end_ns, "buffer visible end preserved");
 
     std::filesystem::remove(path);
     std::filesystem::remove(path.string() + ".wal");
@@ -208,6 +238,9 @@ struct RegisterDuckDbRepositoryTests {
         tradereview::tests::register_test(
             "duckdb repository reads metadata and candle window",
             test_duckdb_repository_reads_metadata_and_candle_window);
+        tradereview::tests::register_test(
+            "duckdb repository applies candle window buffer",
+            test_duckdb_repository_applies_candle_window_buffer);
         tradereview::tests::register_test(
             "duckdb repository uses timestamp aliases",
             test_duckdb_repository_uses_timestamp_aliases);

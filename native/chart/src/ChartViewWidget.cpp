@@ -167,6 +167,31 @@ void draw_boxed_text(
     painter.restore();
 }
 
+void draw_right_axis_label(
+    QPainter& painter,
+    const QString& text,
+    double y,
+    int widget_width,
+    double top,
+    double bottom,
+    QColor text_color)
+{
+    if (widget_width <= 0 || bottom <= top || text.isEmpty()) {
+        return;
+    }
+
+    const QFontMetrics metrics(painter.font());
+    const auto label_width = static_cast<double>(metrics.horizontalAdvance(text) + 12);
+    const auto label_height = static_cast<double>(metrics.height() + 4);
+    const auto x = std::max(4.0, static_cast<double>(widget_width) - label_width - 6.0);
+    const auto y_top = std::clamp(
+        y - (label_height * 0.5),
+        top + 3.0,
+        std::max(top + 3.0, bottom - label_height - 3.0));
+
+    draw_boxed_text(painter, QRectF{x, y_top, label_width, label_height}, text, text_color);
+}
+
 void draw_label_at(
     QPainter& painter,
     const QString& text,
@@ -530,6 +555,7 @@ void ChartViewWidget::draw_chart_overlays(QPainter& painter) const
     painter.setRenderHint(QPainter::Antialiasing, true);
 
     draw_time_axis(painter);
+    draw_value_axis(painter);
     draw_fib_labels(painter);
     draw_crosshair(painter);
 }
@@ -568,6 +594,52 @@ void ChartViewWidget::draw_time_axis(QPainter& painter) const
         text_x = std::clamp(text_x, 4.0, std::max(4.0, static_cast<double>(width()) - text_width - 4.0));
         painter.setPen(chartOverlayText());
         painter.drawText(QPointF{text_x, static_cast<double>(height() - 7)}, label);
+    }
+    painter.restore();
+}
+
+void ChartViewWidget::draw_value_axis(QPainter& painter) const
+{
+    if (scene_model_.index_mapper().empty() || width() <= 0 || height() <= 0) {
+        return;
+    }
+
+    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    if (!price_range.has_value()) {
+        return;
+    }
+
+    const auto layout = build_pane_layout(scene_model_.indicator_panels_enabled());
+    const auto price_bounds = pane_pixel_bounds(layout.price, height());
+    if (!price_bounds.has_value()) {
+        return;
+    }
+
+    constexpr double kAxisFractions[] = {0.0, 0.25, 0.5, 0.75, 1.0};
+    const auto axis_bottom = std::min(price_bounds->second, static_cast<double>(height() - 28));
+    if (axis_bottom <= price_bounds->first) {
+        return;
+    }
+
+    painter.save();
+    painter.setPen(QPen(overlaySubtleLineColor(), 1.0));
+    for (const auto fraction : kAxisFractions) {
+        const auto price = price_range->first + ((price_range->second - price_range->first) * fraction);
+        const auto y = widget_y_for_price(layout.price, height(), price_range->first, price_range->second, price);
+        if (!y.has_value()) {
+            continue;
+        }
+        painter.drawLine(
+            QPointF{static_cast<double>(width() - 6), *y},
+            QPointF{static_cast<double>(width()), *y});
+        draw_right_axis_label(
+            painter,
+            format_price(price),
+            *y,
+            width(),
+            price_bounds->first,
+            axis_bottom,
+            QColor(235, 238, 245));
     }
     painter.restore();
 }

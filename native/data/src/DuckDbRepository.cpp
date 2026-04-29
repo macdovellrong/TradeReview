@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -125,6 +127,62 @@ private:
 [[nodiscard]] std::int64_t us_to_ns(std::int64_t us)
 {
     return us * 1000;
+}
+
+[[nodiscard]] std::int64_t positive_span(core::TimeRange range)
+{
+    if (range.end_ns <= range.start_ns) {
+        return 0;
+    }
+
+    const auto span = static_cast<long double>(range.end_ns) - static_cast<long double>(range.start_ns);
+    const auto max_value = static_cast<long double>(std::numeric_limits<std::int64_t>::max());
+    if (span >= max_value) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    return static_cast<std::int64_t>(span);
+}
+
+[[nodiscard]] std::int64_t clamped_buffer(core::TimeRange visible_range, double multiplier)
+{
+    if (!std::isfinite(multiplier) || multiplier <= 0.0) {
+        return 0;
+    }
+
+    const auto span = positive_span(visible_range);
+    const auto buffer = static_cast<long double>(span) * static_cast<long double>(multiplier);
+    const auto max_value = static_cast<long double>(std::numeric_limits<std::int64_t>::max());
+    if (buffer >= max_value) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    return static_cast<std::int64_t>(buffer);
+}
+
+[[nodiscard]] std::int64_t saturating_subtract(std::int64_t value, std::int64_t amount)
+{
+    const auto min_value = std::numeric_limits<std::int64_t>::min();
+    if (amount > 0 && value < min_value + amount) {
+        return min_value;
+    }
+    return value - amount;
+}
+
+[[nodiscard]] std::int64_t saturating_add(std::int64_t value, std::int64_t amount)
+{
+    const auto max_value = std::numeric_limits<std::int64_t>::max();
+    if (amount > 0 && value > max_value - amount) {
+        return max_value;
+    }
+    return value + amount;
+}
+
+[[nodiscard]] core::TimeRange buffered_query_range(const CandleWindowRequest& request)
+{
+    const auto buffer = clamped_buffer(request.visible_range, request.buffer_multiplier);
+    return {
+        saturating_subtract(request.visible_range.start_ns, buffer),
+        saturating_add(request.visible_range.end_ns, buffer),
+    };
 }
 
 [[nodiscard]] bool contains_string(const std::vector<std::string>& values, std::string_view target)
@@ -356,14 +414,16 @@ public:
             }
         }
 
+        const auto query_range = buffered_query_range(request);
+
         std::ostringstream sql;
         sql << "SELECT epoch_us(" << quoted_identifier(timestamp_name) << "), open, high, low, close, volume";
         for (const auto& indicator : requested_indicators) {
             sql << ", " << quoted_identifier(indicator);
         }
         sql << " FROM " << quoted_identifier(table_name)
-            << " WHERE epoch_us(" << quoted_identifier(timestamp_name) << ") BETWEEN " << ns_to_us(request.visible_range.start_ns)
-            << " AND " << ns_to_us(request.visible_range.end_ns)
+            << " WHERE epoch_us(" << quoted_identifier(timestamp_name) << ") BETWEEN " << ns_to_us(query_range.start_ns)
+            << " AND " << ns_to_us(query_range.end_ns)
             << " ORDER BY " << quoted_identifier(timestamp_name);
 
         auto result = query(sql.str());

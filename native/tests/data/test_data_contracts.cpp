@@ -121,7 +121,7 @@ void test_request_defaults()
     tradereview::core::assert_equal(request.chart_id, std::uint64_t{0}, "default chart id");
     tradereview::core::assert_equal(request.generation, std::uint64_t{0}, "default generation");
     tradereview::core::assert_equal(request.pixel_width, 0, "default pixel width");
-    tradereview::core::assert_equal(request.buffer_multiplier, 2.0, "default buffer multiplier");
+    tradereview::core::assert_equal(request.buffer_multiplier, 1.0, "default buffer multiplier");
     tradereview::core::assert_true(request.include_indicators, "indicators included by default");
     tradereview::core::assert_equal(request.requested_indicators.size(), std::size_t{0}, "default requested indicators");
     tradereview::core::assert_equal(request.warmup_bars, 0, "default warmup bars");

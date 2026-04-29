@@ -75,6 +75,7 @@ private:
     void paintGL() override;
     void draw_chart_overlays(QPainter& painter) const;
     void draw_time_axis(QPainter& painter) const;
+    void draw_value_axis(QPainter& painter) const;
     void draw_crosshair(QPainter& painter) const;
     void draw_fib_labels(QPainter& painter) const;
     void mousePressEvent(QMouseEvent* event) override;
