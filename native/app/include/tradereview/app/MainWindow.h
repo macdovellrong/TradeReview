@@ -8,6 +8,7 @@
 #include <memory>
 
 class QString;
+class QTimer;
 
 namespace tradereview::chart {
 class ChartWorkspaceWidget;
@@ -22,6 +23,7 @@ class StatusStripWidget;
 class MainWindow final : public QMainWindow {
 public:
     explicit MainWindow(QWidget* parent = nullptr);
+    ~MainWindow() override;
 
 private:
     void showStatusMessage(const QString& message);
@@ -30,6 +32,7 @@ private:
 
     QSettings settings_;
     std::unique_ptr<DataLoadController> data_load_controller_;
+    std::unique_ptr<QTimer> replay_timer_;
     MainControlsBar* main_controls_ = nullptr;
     chart::ChartWorkspaceWidget* chart_workspace_ = nullptr;
     SideInfoPanelWidget* side_info_panel_ = nullptr;

@@ -16,6 +16,7 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QMenuBar>
+#include <QObject>
 #include <QString>
 #include <QStatusBar>
 #include <QTimeZone>
@@ -130,6 +131,15 @@ QString replaySummary(const ReplayUpdateResult& result, int speed)
 }
 
 } // namespace
+
+MainWindow::~MainWindow()
+{
+    if (replay_timer_ != nullptr) {
+        replay_timer_->stop();
+        QObject::disconnect(replay_timer_.get(), nullptr, this, nullptr);
+        replay_timer_.reset();
+    }
+}
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -379,8 +389,8 @@ MainWindow::MainWindow(QWidget* parent)
         }
     });
 
-    auto* replayTimer = new QTimer(this);
-    connect(replayTimer, &QTimer::timeout, this, [this]() {
+    replay_timer_ = std::make_unique<QTimer>();
+    connect(replay_timer_.get(), &QTimer::timeout, this, [this]() {
         if (!data_load_controller_->replay_playing()) {
             return;
         }
@@ -399,7 +409,7 @@ MainWindow::MainWindow(QWidget* parent)
             present_error(this, statusBar(), "Replay timer", error, false);
         }
     });
-    replayTimer->start(100);
+    replay_timer_->start(100);
 
     QTimer::singleShot(0, this, [this]() {
         const auto state = load_session_state(settings_);
