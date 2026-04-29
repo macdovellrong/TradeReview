@@ -15,25 +15,21 @@ public:
     using StatusCallback = std::function<void(const QString&)>;
     using IndicatorToggleCallback = std::function<void(const QString&, bool)>;
     using PeriodSelectedCallback = std::function<void(const QString&)>;
-    using DrawingActionCallback = std::function<void(const QString&)>;
 
     explicit ChartToolbarWidget(QWidget* parent = nullptr);
 
     void setStatusCallback(StatusCallback callback);
     void setIndicatorToggleCallback(IndicatorToggleCallback callback);
     void setPeriodSelectedCallback(PeriodSelectedCallback callback);
-    void setDrawingActionCallback(DrawingActionCallback callback);
     void setSelectedPeriod(const QString& period);
 
 private:
-    void notify(const QString& action) const;
     void notify_indicator_toggle(const QString& indicator, bool enabled) const;
     void notify_period_selected(const QString& period) const;
 
     StatusCallback status_callback_;
     IndicatorToggleCallback indicator_toggle_callback_;
     PeriodSelectedCallback period_selected_callback_;
-    DrawingActionCallback drawing_action_callback_;
     std::vector<QPushButton*> period_buttons_;
 };
 

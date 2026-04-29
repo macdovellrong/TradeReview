@@ -1,5 +1,6 @@
 #include "tradereview/app/MainWindow.h"
 
+#include "tradereview/app/DataFileDialogState.h"
 #include "tradereview/app/DataLoadController.h"
 #include "tradereview/app/ErrorPresenter.h"
 #include "tradereview/app/MainControlsBar.h"
@@ -15,7 +16,6 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
-#include <QMenuBar>
 #include <QObject>
 #include <QString>
 #include <QStatusBar>
@@ -148,8 +148,6 @@ MainWindow::MainWindow(QWidget* parent)
 {
     setWindowTitle("TradeReview Native");
     resize(1400, 950);
-
-    menuBar()->addMenu("&File");
 
     auto* central = new QWidget(this);
     auto* root = new QVBoxLayout(central);
@@ -353,11 +351,16 @@ MainWindow::MainWindow(QWidget* parent)
         showStatusMessage(QString("Replay Speed %1x").arg(speed));
     });
     main_controls_->setLoadDataCallback([this]() {
-        const auto path = QFileDialog::getOpenFileName(this, "Load DuckDB Data", QString(), "DuckDB (*.duckdb)");
+        const auto path = QFileDialog::getOpenFileName(
+            this,
+            "Load DuckDB Data",
+            last_data_directory(settings_),
+            "DuckDB (*.duckdb)");
         if (path.isEmpty()) {
             return;
         }
 
+        remember_data_file_directory(settings_, path);
         try {
             const auto status = data_load_controller_->load_file_async(
                 path,

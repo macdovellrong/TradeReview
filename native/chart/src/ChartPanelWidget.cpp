@@ -125,9 +125,6 @@ void ChartPanelWidget::connect_toolbar()
     toolbar_->setPeriodSelectedCallback([this](const QString& period) {
         select_period(period);
     });
-    toolbar_->setDrawingActionCallback([this](const QString& action) {
-        handle_drawing_action(action);
-    });
     toolbar_->setSelectedPeriod(toolbar_period(requested_period_));
 }
 

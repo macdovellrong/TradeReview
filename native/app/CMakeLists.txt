@@ -1,9 +1,11 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGL OpenGLWidgets)
 
 add_library(tradereview_app_logic STATIC
+    include/tradereview/app/DataFileDialogState.h
     include/tradereview/app/ErrorPresenter.h
     include/tradereview/app/SessionState.h
     include/tradereview/app/TimeNavigation.h
+    src/DataFileDialogState.cpp
     src/ErrorPresenter.cpp
     src/SessionState.cpp
     src/TimeNavigation.cpp

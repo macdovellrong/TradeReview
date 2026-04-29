@@ -28,12 +28,6 @@ bool isDefaultSelectedEma(const QString& label)
     return label == "EMA20" || label == "EMA30" || label == "EMA40" || label == "EMA50" || label == "EMA60";
 }
 
-bool isWiredDrawingAction(const QString& action)
-{
-    return action == "Sel" || action == "H" || action == "V" || action == "Line" || action == "Fib"
-        || action == "Fib Ext" || action == "Clear";
-}
-
 } // namespace
 
 ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
@@ -125,26 +119,6 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
         indicator_layout->addWidget(button);
     }
 
-    auto* drawing_widget = new QWidget(this);
-    drawing_widget->setObjectName("ToolbarGroup");
-    drawing_widget->setAttribute(Qt::WA_StyledBackground, true);
-    auto* drawing_layout = new QHBoxLayout(drawing_widget);
-    drawing_layout->setContentsMargins(8, 0, 0, 0);
-    drawing_layout->setSpacing(4);
-    toolbarLayout->addWidget(drawing_widget);
-
-    const QStringList drawingActions{"Sel", "H", "V", "Line", "Fib", "Fib Ext", "Fib Config", "Clear", "Pop"};
-    for (const auto& action : drawingActions) {
-        int width = 44;
-        if (action == "Fib Ext" || action == "Fib Config") {
-            width = 76;
-        }
-        auto* button = createToolbarButton(drawing_widget, action, width);
-        connect(button, &QPushButton::clicked, this, [this, action](bool) {
-            notify(action);
-        });
-        drawing_layout->addWidget(button);
-    }
 }
 
 void ChartToolbarWidget::setStatusCallback(StatusCallback callback)
@@ -162,29 +136,12 @@ void ChartToolbarWidget::setPeriodSelectedCallback(PeriodSelectedCallback callba
     period_selected_callback_ = std::move(callback);
 }
 
-void ChartToolbarWidget::setDrawingActionCallback(DrawingActionCallback callback)
-{
-    drawing_action_callback_ = std::move(callback);
-}
-
 void ChartToolbarWidget::setSelectedPeriod(const QString& period)
 {
     for (auto* button : period_buttons_) {
         if (button != nullptr) {
             button->setChecked(button->text() == period);
         }
-    }
-}
-
-void ChartToolbarWidget::notify(const QString& action) const
-{
-    if (drawing_action_callback_ && isWiredDrawingAction(action)) {
-        drawing_action_callback_(action);
-        return;
-    }
-
-    if (status_callback_) {
-        status_callback_(action + " is not wired yet");
     }
 }
 
