@@ -92,6 +92,7 @@ private:
     [[nodiscard]] std::optional<PriceRange> current_price_range() const;
     [[nodiscard]] bool price_axis_hit(QPointF position) const;
     bool zoom_price_axis_at(QPointF position, double scale_factor);
+    bool pan_price_axis_by_pixels(double pixel_delta_y);
     [[nodiscard]] std::optional<ChartCrosshairState> crosshair_from_position(QPointF position) const;
     [[nodiscard]] std::optional<drawing::DrawingPoint> drawing_point_from_position(QPointF position) const;
     [[nodiscard]] double dense_x_at_pixel(double pixel_x) const;
@@ -108,6 +109,7 @@ private:
     std::optional<double> synced_y_center_price_;
     QPointF last_mouse_position_;
     bool is_panning_ = false;
+    bool is_price_axis_panning_ = false;
     bool renderer_context_ready_ = false;
     bool has_last_reload_request_ = false;
     core::TimeRange last_reload_request_;

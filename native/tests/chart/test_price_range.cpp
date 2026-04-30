@@ -37,6 +37,14 @@ void test_zoom_price_range_anchors_to_mouse_price()
     tradereview::core::assert_near(range.second, 16.0, 0.000001, "zoomed maximum keeps anchor relation");
 }
 
+void test_pan_price_range_shifts_bounds_without_resizing()
+{
+    const auto range = tradereview::chart::pan_price_range({10.0, 20.0}, -2.5);
+
+    tradereview::core::assert_near(range.first, 7.5, 0.000001, "panned minimum");
+    tradereview::core::assert_near(range.second, 17.5, 0.000001, "panned maximum");
+}
+
 struct RegisterPriceRangeTests {
     RegisterPriceRangeTests()
     {
@@ -49,6 +57,9 @@ struct RegisterPriceRangeTests {
         tradereview::tests::register_test(
             "price range zoom anchors to mouse price",
             test_zoom_price_range_anchors_to_mouse_price);
+        tradereview::tests::register_test(
+            "price range pan shifts bounds without resizing",
+            test_pan_price_range_shifts_bounds_without_resizing);
     }
 };
 

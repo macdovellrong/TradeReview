@@ -821,6 +821,14 @@ void ChartViewWidget::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
         setFocus(Qt::MouseFocusReason);
+        if (price_axis_hit(event->position()) && current_price_range().has_value()) {
+            is_price_axis_panning_ = true;
+            last_mouse_position_ = event->position();
+            setCursor(Qt::SizeVerCursor);
+            event->accept();
+            return;
+        }
+
         if (drawing_state_.active_tool().has_value()) {
             const auto point = drawing_point_from_position(event->position());
             if (point.has_value()) {
@@ -842,6 +850,15 @@ void ChartViewWidget::mousePressEvent(QMouseEvent* event)
 
 void ChartViewWidget::mouseMoveEvent(QMouseEvent* event)
 {
+    if (is_price_axis_panning_) {
+        const auto current_position = event->position();
+        const auto delta_y = current_position.y() - last_mouse_position_.y();
+        last_mouse_position_ = current_position;
+        (void)pan_price_axis_by_pixels(delta_y);
+        event->accept();
+        return;
+    }
+
     if (is_panning_) {
         const auto current_position = event->position();
         interaction_.pan_by_pixels(current_position.x() - last_mouse_position_.x(), width());
@@ -873,6 +890,13 @@ void ChartViewWidget::mouseMoveEvent(QMouseEvent* event)
 
 void ChartViewWidget::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (event->button() == Qt::LeftButton && is_price_axis_panning_) {
+        is_price_axis_panning_ = false;
+        unsetCursor();
+        event->accept();
+        return;
+    }
+
     if (event->button() == Qt::LeftButton && is_panning_) {
         is_panning_ = false;
         if (pan_reload_timer_ != nullptr) {
@@ -979,6 +1003,38 @@ bool ChartViewWidget::zoom_price_axis_at(QPointF position, double scale_factor)
     }
 
     const auto next_range = zoom_price_range(*price_range, *anchor_price, scale_factor);
+    if (!scene_model_.set_price_range_override(next_range)) {
+        return false;
+    }
+    update();
+    return true;
+}
+
+bool ChartViewWidget::pan_price_axis_by_pixels(double pixel_delta_y)
+{
+    if (!std::isfinite(pixel_delta_y) || pixel_delta_y == 0.0) {
+        return false;
+    }
+
+    const auto price_range = current_price_range();
+    if (!price_range.has_value()) {
+        return false;
+    }
+
+    const auto layout = build_pane_layout(scene_model_.indicator_panels_enabled());
+    const auto price_bounds = pane_pixel_bounds(layout.price, height());
+    if (!price_bounds.has_value()) {
+        return false;
+    }
+
+    const auto pane_height = std::max(std::abs(price_bounds->second - price_bounds->first), 1.0);
+    const auto price_span = price_range->second - price_range->first;
+    if (!std::isfinite(price_span) || price_span <= 0.0) {
+        return false;
+    }
+
+    const auto price_delta = (pixel_delta_y / pane_height) * price_span;
+    const auto next_range = pan_price_range(*price_range, price_delta);
     if (!scene_model_.set_price_range_override(next_range)) {
         return false;
     }
