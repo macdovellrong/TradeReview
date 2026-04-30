@@ -33,14 +33,14 @@ struct IndicatorGeometry {
     const data::CandleWindow& window,
     DenseRange visible_dense_range,
     PaneRect pane,
-    const std::vector<std::string>& series_names);
+    const std::vector<std::string>& series_names,
+    std::optional<PriceRange> price_range_override = std::nullopt);
 
 [[nodiscard]] IndicatorGeometry build_panel_indicator_geometry(
     const data::CandleWindow& window,
     DenseRange visible_dense_range,
     PaneRect pane,
-    const std::vector<std::string>& series_names,
-    std::optional<PriceRange> price_range_override = std::nullopt);
+    const std::vector<std::string>& series_names);
 
 [[nodiscard]] IndicatorGeometry build_rsi_indicator_geometry(
     const data::CandleWindow& window,
