@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -74,6 +75,27 @@ void test_scene_model_tracks_visible_dense_range_separately()
     tradereview::core::assert_near(range.end_x, 5.0, 0.000001, "visible dense end");
     tradereview::core::assert_equal(model.row_count(), std::size_t{2}, "loaded row count stays separate");
     tradereview::core::assert_equal(model.revision(), revision_after_window + 1, "visible range increments revision");
+}
+
+void test_scene_model_tracks_manual_price_range()
+{
+    tradereview::chart::ChartSceneModel model;
+
+    const auto initial_revision = model.revision();
+    tradereview::core::assert_true(
+        model.set_price_range_override(tradereview::chart::PriceRange{20.0, 10.0}),
+        "manual price range is accepted");
+    const auto range = model.price_range_override();
+
+    tradereview::core::assert_true(range.has_value(), "manual price range is stored");
+    tradereview::core::assert_near(range->first, 10.0, 0.000001, "manual price minimum is normalized");
+    tradereview::core::assert_near(range->second, 20.0, 0.000001, "manual price maximum is normalized");
+    tradereview::core::assert_equal(model.revision(), initial_revision + 1, "manual price range increments revision");
+    tradereview::core::assert_true(
+        !model.set_price_range_override(tradereview::chart::PriceRange{10.0, 20.0}),
+        "same manual range is ignored");
+    tradereview::core::assert_true(model.set_price_range_override(std::nullopt), "manual price range can be cleared");
+    tradereview::core::assert_true(!model.price_range_override().has_value(), "manual price range is cleared");
 }
 
 void test_scene_model_rejects_stale_generation()
@@ -166,6 +188,9 @@ struct RegisterChartSceneModelTests {
         tradereview::tests::register_test(
             "scene model tracks visible dense range separately",
             test_scene_model_tracks_visible_dense_range_separately);
+        tradereview::tests::register_test(
+            "scene model tracks manual price range",
+            test_scene_model_tracks_manual_price_range);
         tradereview::tests::register_test(
             "scene model rejects stale generation",
             test_scene_model_rejects_stale_generation);

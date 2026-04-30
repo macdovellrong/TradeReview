@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <iterator>
 #include <limits>
+#include <optional>
 
 namespace tradereview::chart::rendering {
 namespace {
@@ -183,7 +184,11 @@ CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRang
     return build_candle_geometry(window, visible_dense_range, full_pane());
 }
 
-CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRange visible_dense_range, PaneRect pane)
+CandleGeometry build_candle_geometry(
+    const data::CandleWindow& window,
+    DenseRange visible_dense_range,
+    PaneRect pane,
+    std::optional<PriceRange> price_range_override)
 {
     CandleGeometry geometry;
     geometry.generation = window.generation;
@@ -202,12 +207,20 @@ CandleGeometry build_candle_geometry(const data::CandleWindow& window, DenseRang
 
     auto min_price = std::numeric_limits<double>::max();
     auto max_price = std::numeric_limits<double>::lowest();
-    for (std::size_t row = first_row; row <= last_row; ++row) {
-        if (!finite_candle_row(window, row)) {
-            continue;
+    const auto normalized_price_range = price_range_override.has_value()
+        ? normalize_price_range(price_range_override->first, price_range_override->second)
+        : std::optional<PriceRange>{};
+    if (normalized_price_range.has_value()) {
+        min_price = normalized_price_range->first;
+        max_price = normalized_price_range->second;
+    } else {
+        for (std::size_t row = first_row; row <= last_row; ++row) {
+            if (!finite_candle_row(window, row)) {
+                continue;
+            }
+            min_price = std::min(min_price, window.low[row]);
+            max_price = std::max(max_price, window.high[row]);
         }
-        min_price = std::min(min_price, window.low[row]);
-        max_price = std::max(max_price, window.high[row]);
     }
 
     if (min_price == std::numeric_limits<double>::max() || max_price == std::numeric_limits<double>::lowest()) {
@@ -277,17 +290,18 @@ void CandleLayer::release(QOpenGLFunctions_3_3_Core& gl)
 
 void CandleLayer::upload(
     QOpenGLFunctions_3_3_Core& gl,
-        const data::CandleWindow& window,
-        DenseRange visible_dense_range,
-        PaneRect pane,
-        std::uint64_t window_revision)
+    const data::CandleWindow& window,
+    DenseRange visible_dense_range,
+    PaneRect pane,
+    std::uint64_t window_revision,
+    std::optional<PriceRange> price_range_override)
 {
     if (uploaded_generation_ == window.generation && uploaded_revision_ == window_revision) {
         return;
     }
 
     initialize(gl);
-    const auto geometry = build_candle_geometry(window, visible_dense_range, pane);
+    const auto geometry = build_candle_geometry(window, visible_dense_range, pane, price_range_override);
     upload_vertices(gl, grid_vertex_array_, grid_buffer_, geometry.grid_vertices);
     upload_vertices(gl, body_vertex_array_, body_buffer_, geometry.body_vertices);
     upload_vertices(gl, wick_vertex_array_, wick_buffer_, geometry.wick_vertices);

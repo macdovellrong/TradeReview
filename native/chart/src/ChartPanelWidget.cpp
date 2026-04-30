@@ -125,6 +125,9 @@ void ChartPanelWidget::connect_toolbar()
     toolbar_->setPeriodSelectedCallback([this](const QString& period) {
         select_period(period);
     });
+    toolbar_->setPriceAxisFitCallback([this]() {
+        chart_view_->fit_price_axis_to_visible_range();
+    });
     toolbar_->setSelectedPeriod(toolbar_period(requested_period_));
 }
 

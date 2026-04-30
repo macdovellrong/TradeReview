@@ -2,11 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "tradereview/chart/ChartInteractionController.h"
 #include "tradereview/chart/ChartIndexMapper.h"
+#include "tradereview/chart/PriceRange.h"
 #include "tradereview/data/CandleWindow.h"
 
 namespace tradereview::chart {
@@ -25,6 +27,7 @@ public:
     [[nodiscard]] bool loading() const;
     [[nodiscard]] const data::CandleWindow& window() const;
     [[nodiscard]] DenseRange visible_dense_range() const;
+    [[nodiscard]] std::optional<PriceRange> price_range_override() const;
     [[nodiscard]] const ChartIndexMapper& index_mapper() const;
     [[nodiscard]] std::vector<std::string> enabled_price_indicators() const;
     [[nodiscard]] std::vector<std::string> requested_indicators() const;
@@ -33,6 +36,7 @@ public:
     bool set_indicator_enabled(const std::string& indicator_name, bool enabled);
     bool set_bollinger_bands_enabled(bool enabled);
     bool set_indicator_panels_enabled(bool enabled);
+    bool set_price_range_override(std::optional<PriceRange> range);
 
 private:
     struct IndicatorState {
@@ -46,6 +50,7 @@ private:
     bool loading_ = false;
     data::CandleWindow window_;
     DenseRange visible_dense_range_;
+    std::optional<PriceRange> price_range_override_;
     ChartIndexMapper index_mapper_;
     IndicatorState indicator_state_;
 };

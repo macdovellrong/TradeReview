@@ -70,6 +70,20 @@ void test_price_indicator_geometry_uses_price_pane_scale()
     tradereview::core::assert_true(vertices_inside(geometry.vertices, layout.price), "price indicators stay in price pane");
 }
 
+void test_price_indicator_geometry_uses_manual_price_range()
+{
+    const auto window = sample_window();
+    const auto geometry = tradereview::chart::rendering::build_price_indicator_geometry(
+        window,
+        {0.0, 3.0},
+        {-1.0F, 1.0F, -1.0F, 1.0F},
+        {std::string{tradereview::data::IndicatorColumns::EMA20}},
+        tradereview::chart::PriceRange{0.0, 20.0});
+
+    tradereview::core::assert_equal(geometry.vertices.size(), std::size_t{6}, "single price indicator line");
+    tradereview::core::assert_near(geometry.vertices.front().y, 0.05, 0.000001, "manual price range maps indicator y");
+}
+
 void test_indicator_panel_geometry_uses_independent_y_scale()
 {
     const auto window = sample_window();
@@ -140,6 +154,9 @@ struct RegisterIndicatorGeometryTests {
         tradereview::tests::register_test(
             "price indicator geometry uses price pane scale",
             test_price_indicator_geometry_uses_price_pane_scale);
+        tradereview::tests::register_test(
+            "price indicator geometry uses manual price range",
+            test_price_indicator_geometry_uses_manual_price_range);
         tradereview::tests::register_test(
             "indicator panel geometry uses independent y scale",
             test_indicator_panel_geometry_uses_independent_y_scale);

@@ -3,6 +3,7 @@
 #include "tradereview/chart/ChartIndexMapper.h"
 #include "tradereview/chart/ChartInteractionController.h"
 #include "tradereview/chart/PaneLayout.h"
+#include "tradereview/chart/PriceRange.h"
 #include "tradereview/chart/rendering/GLResources.h"
 #include "tradereview/data/CandleWindow.h"
 #include "tradereview/drawing/DrawingSpec.h"
@@ -35,7 +36,8 @@ struct DrawingGeometry {
     DenseRange visible_dense_range,
     PaneRect pane,
     const std::vector<drawing::DrawingSpec>& drawings,
-    std::optional<drawing::DrawingSpec> preview);
+    std::optional<drawing::DrawingSpec> preview,
+    std::optional<PriceRange> price_range_override = std::nullopt);
 
 class DrawingLayer final {
 public:

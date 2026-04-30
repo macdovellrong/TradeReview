@@ -2,6 +2,7 @@
 
 #include "tradereview/chart/ChartInteractionController.h"
 #include "tradereview/chart/PaneLayout.h"
+#include "tradereview/chart/PriceRange.h"
 #include "tradereview/chart/rendering/GLResources.h"
 #include "tradereview/data/CandleWindow.h"
 
@@ -9,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -37,7 +39,8 @@ struct IndicatorGeometry {
     const data::CandleWindow& window,
     DenseRange visible_dense_range,
     PaneRect pane,
-    const std::vector<std::string>& series_names);
+    const std::vector<std::string>& series_names,
+    std::optional<PriceRange> price_range_override = std::nullopt);
 
 [[nodiscard]] IndicatorGeometry build_rsi_indicator_geometry(
     const data::CandleWindow& window,

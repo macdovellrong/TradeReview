@@ -96,14 +96,22 @@ void GLChartRenderer::render(
 
     functions->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     const auto layout = build_pane_layout(scene_model.indicator_panels_enabled());
-    candle_layer_.upload(*functions, scene_model.window(), scene_model.visible_dense_range(), layout.price, scene_model.revision());
+    const auto price_range_override = scene_model.price_range_override();
+    candle_layer_.upload(
+        *functions,
+        scene_model.window(),
+        scene_model.visible_dense_range(),
+        layout.price,
+        scene_model.revision(),
+        price_range_override);
     candle_layer_.render(*functions);
 
     IndicatorGeometry indicators = build_price_indicator_geometry(
         scene_model.window(),
         scene_model.visible_dense_range(),
         layout.price,
-        scene_model.enabled_price_indicators());
+        scene_model.enabled_price_indicators(),
+        price_range_override);
 
     if (layout.macd_visible) {
         auto macd_lines = build_panel_indicator_geometry(
@@ -148,7 +156,8 @@ void GLChartRenderer::render(
         scene_model.visible_dense_range(),
         layout.price,
         drawings,
-        std::move(preview));
+        std::move(preview),
+        price_range_override);
     const auto revision = (scene_model.revision() * 1'000'003ULL) + drawing_revision;
     drawing_layer_.upload(*functions, drawing_geometry, revision);
     drawing_layer_.render(*functions);

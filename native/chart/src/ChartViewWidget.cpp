@@ -4,6 +4,7 @@
 #include "tradereview/chart/ChartTimeFormat.h"
 #include "tradereview/chart/DrawingInput.h"
 #include "tradereview/chart/PaneLayout.h"
+#include "tradereview/chart/PriceRange.h"
 #include "tradereview/drawing/FibMath.h"
 
 #include <QColor>
@@ -33,6 +34,7 @@ namespace tradereview::chart {
 namespace {
 
 constexpr int kPanReloadThrottleMs = 200;
+constexpr double kPriceAxisHitWidth = 96.0;
 
 [[nodiscard]] bool finite_candle_row(const data::CandleWindow& window, std::size_t row)
 {
@@ -471,6 +473,19 @@ void ChartViewWidget::request_current_visible_window()
     last_reload_request_ = visible_range;
 }
 
+bool ChartViewWidget::fit_price_axis_to_visible_range()
+{
+    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    if (!price_range.has_value()) {
+        return false;
+    }
+    if (!scene_model_.set_price_range_override(*price_range)) {
+        return false;
+    }
+    update();
+    return true;
+}
+
 std::optional<double> ChartViewWidget::dense_x_for_timestamp(std::int64_t timestamp_ns) const
 {
     if (scene_model_.index_mapper().empty()) {
@@ -630,7 +645,7 @@ void ChartViewWidget::draw_value_axis(QPainter& painter) const
         return;
     }
 
-    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    const auto price_range = current_price_range();
     if (!price_range.has_value()) {
         return;
     }
@@ -676,7 +691,7 @@ void ChartViewWidget::draw_crosshair(QPainter& painter) const
         return;
     }
 
-    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    const auto price_range = current_price_range();
     if (!price_range.has_value()) {
         return;
     }
@@ -723,7 +738,7 @@ void ChartViewWidget::draw_fib_labels(QPainter& painter) const
         return;
     }
 
-    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    const auto price_range = current_price_range();
     if (!price_range.has_value()) {
         return;
     }
@@ -880,6 +895,11 @@ void ChartViewWidget::wheelEvent(QWheelEvent* event)
         return;
     }
 
+    if (price_axis_hit(event->position()) && zoom_price_axis_at(event->position(), scale)) {
+        event->accept();
+        return;
+    }
+
     interaction_.zoom_at_pixel(event->position().x(), width(), scale);
     apply_interaction_update();
     event->accept();
@@ -926,6 +946,46 @@ void ChartViewWidget::schedule_pan_reload()
     }
 }
 
+std::optional<PriceRange> ChartViewWidget::current_price_range() const
+{
+    if (const auto override_range = scene_model_.price_range_override(); override_range.has_value()) {
+        return override_range;
+    }
+    return visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+}
+
+bool ChartViewWidget::price_axis_hit(QPointF position) const
+{
+    if (width() <= 0 || height() <= 0 || position.x() < static_cast<double>(width()) - kPriceAxisHitWidth) {
+        return false;
+    }
+
+    const auto layout = build_pane_layout(scene_model_.indicator_panels_enabled());
+    const auto price_bounds = pane_pixel_bounds(layout.price, height());
+    if (!price_bounds.has_value()) {
+        return false;
+    }
+
+    const auto axis_bottom = std::min(price_bounds->second, static_cast<double>(height() - 28));
+    return position.y() >= price_bounds->first && position.y() <= axis_bottom;
+}
+
+bool ChartViewWidget::zoom_price_axis_at(QPointF position, double scale_factor)
+{
+    const auto price_range = current_price_range();
+    const auto anchor_price = price_at_pixel_y(position.y());
+    if (!price_range.has_value() || !anchor_price.has_value()) {
+        return false;
+    }
+
+    const auto next_range = zoom_price_range(*price_range, *anchor_price, scale_factor);
+    if (!scene_model_.set_price_range_override(next_range)) {
+        return false;
+    }
+    update();
+    return true;
+}
+
 std::optional<ChartCrosshairState> ChartViewWidget::crosshair_from_position(QPointF position) const
 {
     if (scene_model_.index_mapper().empty() || width() <= 0 || height() <= 0) {
@@ -951,7 +1011,7 @@ std::optional<drawing::DrawingPoint> ChartViewWidget::drawing_point_from_positio
         return std::nullopt;
     }
 
-    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    const auto price_range = current_price_range();
     if (!price_range.has_value()) {
         return std::nullopt;
     }
@@ -977,7 +1037,7 @@ double ChartViewWidget::dense_x_at_pixel(double pixel_x) const
 
 std::optional<double> ChartViewWidget::price_at_pixel_y(double pixel_y) const
 {
-    const auto price_range = visible_price_range(scene_model_.window(), scene_model_.visible_dense_range());
+    const auto price_range = current_price_range();
     if (!price_range.has_value() || height() <= 0) {
         return std::nullopt;
     }

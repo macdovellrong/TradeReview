@@ -2,6 +2,7 @@
 
 #include "tradereview/chart/ChartInteractionController.h"
 #include "tradereview/chart/PaneLayout.h"
+#include "tradereview/chart/PriceRange.h"
 #include "tradereview/chart/rendering/GLResources.h"
 #include "tradereview/data/CandleWindow.h"
 
@@ -9,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace tradereview::chart::rendering {
@@ -36,7 +38,8 @@ struct CandleGeometry {
 [[nodiscard]] CandleGeometry build_candle_geometry(
     const data::CandleWindow& window,
     DenseRange visible_dense_range,
-    PaneRect pane);
+    PaneRect pane,
+    std::optional<PriceRange> price_range_override = std::nullopt);
 
 class CandleLayer final {
 public:
@@ -47,7 +50,8 @@ public:
         const data::CandleWindow& window,
         DenseRange visible_dense_range,
         PaneRect pane,
-        std::uint64_t window_revision);
+        std::uint64_t window_revision,
+        std::optional<PriceRange> price_range_override = std::nullopt);
     void render(QOpenGLFunctions_3_3_Core& gl) const;
 
     [[nodiscard]] std::uint64_t uploaded_generation() const;

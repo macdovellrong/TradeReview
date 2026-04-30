@@ -270,9 +270,13 @@ IndicatorGeometry build_price_indicator_geometry(
     const data::CandleWindow& window,
     DenseRange visible_dense_range,
     PaneRect pane,
-    const std::vector<std::string>& series_names)
+    const std::vector<std::string>& series_names,
+    std::optional<PriceRange> price_range_override)
 {
-    return build_indicator_geometry(window, visible_dense_range, pane, series_names, true);
+    const auto normalized_price_range = price_range_override.has_value()
+        ? normalize_price_range(price_range_override->first, price_range_override->second)
+        : std::optional<PriceRange>{};
+    return build_indicator_geometry(window, visible_dense_range, pane, series_names, true, normalized_price_range);
 }
 
 IndicatorGeometry build_panel_indicator_geometry(

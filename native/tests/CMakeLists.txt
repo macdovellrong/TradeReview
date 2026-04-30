@@ -14,6 +14,7 @@ add_executable(tradereview_native_tests
     chart/test_drawing_layer_geometry.cpp
     chart/test_drawing_input.cpp
     chart/test_lod_resolver.cpp
+    chart/test_price_range.cpp
     chart/test_indicator_layer_geometry.cpp
     chart/test_pane_layout.cpp
     chart/test_windowing.cpp

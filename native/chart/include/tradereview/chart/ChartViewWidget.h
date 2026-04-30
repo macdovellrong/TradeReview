@@ -11,6 +11,7 @@
 
 #include "tradereview/chart/ChartSceneModel.h"
 #include "tradereview/chart/ChartInteractionController.h"
+#include "tradereview/chart/PriceRange.h"
 #include "tradereview/chart/rendering/GLChartRenderer.h"
 #include "tradereview/core/TimeRange.h"
 #include "tradereview/data/CandleWindow.h"
@@ -62,6 +63,7 @@ public:
     [[nodiscard]] std::optional<drawing::DrawingSpec> drawing_preview() const;
     [[nodiscard]] std::optional<std::uint64_t> selected_drawing_id() const;
     void request_current_visible_window();
+    bool fit_price_axis_to_visible_range();
     [[nodiscard]] std::optional<double> dense_x_for_timestamp(std::int64_t timestamp_ns) const;
     void sync_crosshair(std::int64_t timestamp_ns, double price, double dense_x);
     bool sync_center_on_timestamp(std::int64_t timestamp_ns, std::optional<double> price = std::nullopt);
@@ -87,6 +89,9 @@ private:
     void release_renderer();
     void apply_interaction_update(bool allow_reload = true);
     void schedule_pan_reload();
+    [[nodiscard]] std::optional<PriceRange> current_price_range() const;
+    [[nodiscard]] bool price_axis_hit(QPointF position) const;
+    bool zoom_price_axis_at(QPointF position, double scale_factor);
     [[nodiscard]] std::optional<ChartCrosshairState> crosshair_from_position(QPointF position) const;
     [[nodiscard]] std::optional<drawing::DrawingPoint> drawing_point_from_position(QPointF position) const;
     [[nodiscard]] double dense_x_at_pixel(double pixel_x) const;

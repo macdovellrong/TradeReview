@@ -119,6 +119,13 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
         indicator_layout->addWidget(button);
     }
 
+    auto* fitYButton = createToolbarButton(indicator_widget, "Fit Y", 56);
+    connect(fitYButton, &QPushButton::clicked, this, [this]() {
+        if (price_axis_fit_callback_) {
+            price_axis_fit_callback_();
+        }
+    });
+    indicator_layout->addWidget(fitYButton);
 }
 
 void ChartToolbarWidget::setStatusCallback(StatusCallback callback)
@@ -134,6 +141,11 @@ void ChartToolbarWidget::setIndicatorToggleCallback(IndicatorToggleCallback call
 void ChartToolbarWidget::setPeriodSelectedCallback(PeriodSelectedCallback callback)
 {
     period_selected_callback_ = std::move(callback);
+}
+
+void ChartToolbarWidget::setPriceAxisFitCallback(PriceAxisFitCallback callback)
+{
+    price_axis_fit_callback_ = std::move(callback);
 }
 
 void ChartToolbarWidget::setSelectedPeriod(const QString& period)

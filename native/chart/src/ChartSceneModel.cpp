@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -109,6 +110,11 @@ DenseRange ChartSceneModel::visible_dense_range() const
     return visible_dense_range_;
 }
 
+std::optional<PriceRange> ChartSceneModel::price_range_override() const
+{
+    return price_range_override_;
+}
+
 const ChartIndexMapper& ChartSceneModel::index_mapper() const
 {
     return index_mapper_;
@@ -185,6 +191,23 @@ bool ChartSceneModel::set_indicator_panels_enabled(bool enabled)
         return false;
     }
     indicator_state_.indicator_panels_enabled = enabled;
+    ++revision_;
+    return true;
+}
+
+bool ChartSceneModel::set_price_range_override(std::optional<PriceRange> range)
+{
+    if (range.has_value()) {
+        range = normalize_price_range(range->first, range->second);
+        if (!range.has_value()) {
+            return false;
+        }
+    }
+    if (price_range_override_ == range) {
+        return false;
+    }
+
+    price_range_override_ = range;
     ++revision_;
     return true;
 }

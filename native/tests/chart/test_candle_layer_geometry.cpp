@@ -113,6 +113,18 @@ void test_candle_geometry_scales_y_from_visible_rows_only()
     tradereview::core::assert_true(max_body_y > 0.2F, "off-screen extreme candle does not compress visible y scale");
 }
 
+void test_candle_geometry_uses_manual_price_range()
+{
+    const auto geometry = tradereview::chart::rendering::build_candle_geometry(
+        sample_window(),
+        {0.0, 1.0},
+        {-1.0F, 1.0F, -1.0F, 1.0F},
+        tradereview::chart::PriceRange{0.0, 20.0});
+
+    tradereview::core::assert_near(geometry.wick_vertices.at(0).y, -0.1, 0.000001, "manual price range maps wick low");
+    tradereview::core::assert_near(geometry.wick_vertices.at(1).y, 0.3, 0.000001, "manual price range maps wick high");
+}
+
 struct RegisterCandleLayerGeometryTests {
     RegisterCandleLayerGeometryTests()
     {
@@ -131,6 +143,9 @@ struct RegisterCandleLayerGeometryTests {
         tradereview::tests::register_test(
             "candle geometry scales y from visible rows only",
             test_candle_geometry_scales_y_from_visible_rows_only);
+        tradereview::tests::register_test(
+            "candle geometry uses manual price range",
+            test_candle_geometry_uses_manual_price_range);
     }
 };
 

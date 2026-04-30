@@ -271,14 +271,23 @@ DrawingGeometry build_drawing_geometry(
     DenseRange visible_dense_range,
     PaneRect pane,
     const std::vector<drawing::DrawingSpec>& drawings,
-    std::optional<drawing::DrawingSpec> preview)
+    std::optional<drawing::DrawingSpec> preview,
+    std::optional<PriceRange> price_range_override)
 {
     DrawingGeometry geometry;
     const auto range = normalized_visible_range(visible_dense_range);
     double min_price = 0.0;
     double max_price = 0.0;
-    if (!visible_price_range(window, range, min_price, max_price)) {
-        return geometry;
+    const auto normalized_price_range = price_range_override.has_value()
+        ? normalize_price_range(price_range_override->first, price_range_override->second)
+        : std::optional<PriceRange>{};
+    if (normalized_price_range.has_value()) {
+        min_price = normalized_price_range->first;
+        max_price = normalized_price_range->second;
+    } else {
+        if (!visible_price_range(window, range, min_price, max_price)) {
+            return geometry;
+        }
     }
 
     for (const auto& drawing : drawings) {
