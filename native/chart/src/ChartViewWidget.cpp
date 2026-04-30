@@ -11,6 +11,7 @@
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QObject>
 #include <QOpenGLContext>
 #include <QPainter>
 #include <QPen>
@@ -266,18 +267,27 @@ ChartViewWidget::~ChartViewWidget()
     if (pan_reload_timer_ != nullptr) {
         pan_reload_timer_->stop();
     }
+    if (auto* gl_context = context(); gl_context != nullptr) {
+        QObject::disconnect(gl_context, &QOpenGLContext::aboutToBeDestroyed, this, &ChartViewWidget::release_renderer);
+    }
     release_renderer();
 }
 
 void ChartViewWidget::release_renderer()
 {
-    if (context() == nullptr) {
+    if (!renderer_context_ready_) {
         return;
     }
 
+    auto* gl_context = context();
+    if (gl_context == nullptr || !gl_context->isValid() || !isValid()) {
+        renderer_context_ready_ = false;
+        return;
+    }
     makeCurrent();
     renderer_.release();
     doneCurrent();
+    renderer_context_ready_ = false;
 }
 
 std::uint64_t ChartViewWidget::bump_generation()
@@ -534,6 +544,7 @@ void ChartViewWidget::initializeGL()
         &ChartViewWidget::release_renderer,
         Qt::DirectConnection);
     renderer_.initialize();
+    renderer_context_ready_ = true;
 }
 
 void ChartViewWidget::resizeGL(int width, int height)

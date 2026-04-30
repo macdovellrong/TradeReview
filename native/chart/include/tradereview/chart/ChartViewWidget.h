@@ -103,6 +103,7 @@ private:
     std::optional<double> synced_y_center_price_;
     QPointF last_mouse_position_;
     bool is_panning_ = false;
+    bool renderer_context_ready_ = false;
     bool has_last_reload_request_ = false;
     core::TimeRange last_reload_request_;
 };
