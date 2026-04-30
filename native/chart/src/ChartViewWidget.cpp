@@ -16,6 +16,7 @@
 #include <QPen>
 #include <QRectF>
 #include <QString>
+#include <QTimer>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -29,6 +30,8 @@
 
 namespace tradereview::chart {
 namespace {
+
+constexpr int kPanReloadThrottleMs = 200;
 
 [[nodiscard]] bool finite_candle_row(const data::CandleWindow& window, std::size_t row)
 {
@@ -247,10 +250,22 @@ ChartViewWidget::ChartViewWidget(QWidget* parent)
 {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
+
+    pan_reload_timer_ = new QTimer(this);
+    pan_reload_timer_->setSingleShot(true);
+    pan_reload_timer_->setInterval(kPanReloadThrottleMs);
+    connect(pan_reload_timer_, &QTimer::timeout, this, [this]() {
+        if (is_panning_) {
+            apply_interaction_update();
+        }
+    });
 }
 
 ChartViewWidget::~ChartViewWidget()
 {
+    if (pan_reload_timer_ != nullptr) {
+        pan_reload_timer_->stop();
+    }
     release_renderer();
 }
 
@@ -806,6 +821,7 @@ void ChartViewWidget::mouseMoveEvent(QMouseEvent* event)
         interaction_.pan_by_pixels(current_position.x() - last_mouse_position_.x(), width());
         last_mouse_position_ = current_position;
         apply_interaction_update(false);
+        schedule_pan_reload();
         event->accept();
         return;
     }
@@ -833,6 +849,9 @@ void ChartViewWidget::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton && is_panning_) {
         is_panning_ = false;
+        if (pan_reload_timer_ != nullptr) {
+            pan_reload_timer_->stop();
+        }
         unsetCursor();
         apply_interaction_update();
         event->accept();
@@ -886,6 +905,13 @@ void ChartViewWidget::apply_interaction_update(bool allow_reload)
 
     if (range_changed) {
         update();
+    }
+}
+
+void ChartViewWidget::schedule_pan_reload()
+{
+    if (pan_reload_timer_ != nullptr && !pan_reload_timer_->isActive()) {
+        pan_reload_timer_->start();
     }
 }
 

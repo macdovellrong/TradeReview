@@ -21,6 +21,7 @@
 class QKeyEvent;
 class QMouseEvent;
 class QPainter;
+class QTimer;
 class QWheelEvent;
 
 namespace tradereview::chart {
@@ -85,6 +86,7 @@ private:
     void keyPressEvent(QKeyEvent* event) override;
     void release_renderer();
     void apply_interaction_update(bool allow_reload = true);
+    void schedule_pan_reload();
     [[nodiscard]] std::optional<ChartCrosshairState> crosshair_from_position(QPointF position) const;
     [[nodiscard]] std::optional<drawing::DrawingPoint> drawing_point_from_position(QPointF position) const;
     [[nodiscard]] double dense_x_at_pixel(double pixel_x) const;
@@ -96,6 +98,7 @@ private:
     drawing::DrawingInteractionState drawing_state_;
     ReloadRequestCallback reload_request_callback_;
     CrosshairMovedCallback crosshair_moved_callback_;
+    QTimer* pan_reload_timer_ = nullptr;
     std::optional<ChartCrosshairState> crosshair_state_;
     std::optional<double> synced_y_center_price_;
     QPointF last_mouse_position_;
