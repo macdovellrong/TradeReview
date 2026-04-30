@@ -45,6 +45,13 @@ void test_pan_price_range_shifts_bounds_without_resizing()
     tradereview::core::assert_near(range.second, 17.5, 0.000001, "panned maximum");
 }
 
+void test_price_delta_for_pixel_pan_scales_by_visible_height()
+{
+    const auto delta = tradereview::chart::price_delta_for_pixel_pan({10.0, 20.0}, 25.0, 100.0);
+
+    tradereview::core::assert_near(delta, 2.5, 0.000001, "price delta from pixel pan");
+}
+
 struct RegisterPriceRangeTests {
     RegisterPriceRangeTests()
     {
@@ -60,6 +67,9 @@ struct RegisterPriceRangeTests {
         tradereview::tests::register_test(
             "price range pan shifts bounds without resizing",
             test_pan_price_range_shifts_bounds_without_resizing);
+        tradereview::tests::register_test(
+            "price delta for pixel pan scales by visible height",
+            test_price_delta_for_pixel_pan_scales_by_visible_height);
     }
 };
 

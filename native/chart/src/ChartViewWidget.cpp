@@ -821,10 +821,7 @@ void ChartViewWidget::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
         setFocus(Qt::MouseFocusReason);
-        if (price_axis_hit(event->position()) && current_price_range().has_value()) {
-            is_price_axis_panning_ = true;
-            last_mouse_position_ = event->position();
-            setCursor(Qt::SizeVerCursor);
+        if (price_axis_hit(event->position())) {
             event->accept();
             return;
         }
@@ -850,19 +847,13 @@ void ChartViewWidget::mousePressEvent(QMouseEvent* event)
 
 void ChartViewWidget::mouseMoveEvent(QMouseEvent* event)
 {
-    if (is_price_axis_panning_) {
-        const auto current_position = event->position();
-        const auto delta_y = current_position.y() - last_mouse_position_.y();
-        last_mouse_position_ = current_position;
-        (void)pan_price_axis_by_pixels(delta_y);
-        event->accept();
-        return;
-    }
-
     if (is_panning_) {
         const auto current_position = event->position();
-        interaction_.pan_by_pixels(current_position.x() - last_mouse_position_.x(), width());
+        const auto delta_x = current_position.x() - last_mouse_position_.x();
+        const auto delta_y = current_position.y() - last_mouse_position_.y();
+        interaction_.pan_by_pixels(delta_x, width());
         last_mouse_position_ = current_position;
+        (void)pan_price_axis_by_pixels(delta_y);
         apply_interaction_update(false);
         schedule_pan_reload();
         event->accept();
@@ -890,13 +881,6 @@ void ChartViewWidget::mouseMoveEvent(QMouseEvent* event)
 
 void ChartViewWidget::mouseReleaseEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::LeftButton && is_price_axis_panning_) {
-        is_price_axis_panning_ = false;
-        unsetCursor();
-        event->accept();
-        return;
-    }
-
     if (event->button() == Qt::LeftButton && is_panning_) {
         is_panning_ = false;
         if (pan_reload_timer_ != nullptr) {
@@ -1033,7 +1017,7 @@ bool ChartViewWidget::pan_price_axis_by_pixels(double pixel_delta_y)
         return false;
     }
 
-    const auto price_delta = (pixel_delta_y / pane_height) * price_span;
+    const auto price_delta = price_delta_for_pixel_pan(*price_range, pixel_delta_y, pane_height);
     const auto next_range = pan_price_range(*price_range, price_delta);
     if (!scene_model_.set_price_range_override(next_range)) {
         return false;

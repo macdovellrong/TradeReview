@@ -46,4 +46,13 @@ PriceRange pan_price_range(PriceRange range, double price_delta)
     return normalize_price_range(normalized.first + price_delta, normalized.second + price_delta).value_or(normalized);
 }
 
+double price_delta_for_pixel_pan(PriceRange range, double pixel_delta_y, double pane_height)
+{
+    const auto normalized = normalize_price_range(range.first, range.second).value_or(PriceRange{0.0, 1.0});
+    if (!std::isfinite(pixel_delta_y) || !std::isfinite(pane_height) || pane_height <= 0.0) {
+        return 0.0;
+    }
+    return (pixel_delta_y / pane_height) * (normalized.second - normalized.first);
+}
+
 } // namespace tradereview::chart
