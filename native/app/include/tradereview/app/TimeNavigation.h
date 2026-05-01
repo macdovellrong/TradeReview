@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 namespace tradereview::app {
 
@@ -23,5 +24,10 @@ struct ChartTargetRow {
     std::int64_t center_ns,
     core::TimeRange dataset_range,
     std::int64_t width_ns);
+[[nodiscard]] core::TimeRange adjusted_visible_range_for_period(
+    core::TimeRange visible_range,
+    core::TimeRange dataset_range,
+    std::string_view period,
+    int minimum_bars);
 
 } // namespace tradereview::app

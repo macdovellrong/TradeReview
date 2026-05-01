@@ -1,16 +1,36 @@
 #include "tradereview/app/TimeNavigation.h"
 
+#include "tradereview/core/Period.h"
+
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace tradereview::app {
 namespace {
 
-constexpr std::int64_t kNanosecondsPerMinute = 60LL * 1000LL * 1000LL * 1000LL;
+constexpr std::int64_t kNanosecondsPerSecond = 1000LL * 1000LL * 1000LL;
+constexpr std::int64_t kNanosecondsPerMinute = 60LL * kNanosecondsPerSecond;
 
 [[nodiscard]] std::int64_t positive_width(core::TimeRange range)
 {
     return std::max<std::int64_t>(0, range.end_ns - range.start_ns);
+}
+
+[[nodiscard]] std::int64_t minimum_period_width_ns(std::int64_t period_seconds, int minimum_bars)
+{
+    if (period_seconds <= 0 || minimum_bars <= 0) {
+        return 0;
+    }
+
+    const auto width = static_cast<long double>(period_seconds)
+        * static_cast<long double>(kNanosecondsPerSecond)
+        * static_cast<long double>(minimum_bars);
+    const auto max_value = static_cast<long double>(std::numeric_limits<std::int64_t>::max());
+    if (width >= max_value) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    return static_cast<std::int64_t>(width);
 }
 
 } // namespace
@@ -78,6 +98,28 @@ core::TimeRange centered_visible_range(
     }
 
     return {start, end};
+}
+
+core::TimeRange adjusted_visible_range_for_period(
+    core::TimeRange visible_range,
+    core::TimeRange dataset_range,
+    std::string_view period,
+    int minimum_bars)
+{
+    const auto period_seconds = core::try_period_seconds(period);
+    if (!period_seconds.has_value()) {
+        return visible_range;
+    }
+
+    const auto minimum_width = minimum_period_width_ns(*period_seconds, minimum_bars);
+    if (minimum_width <= 0 || positive_width(visible_range) >= minimum_width) {
+        return visible_range;
+    }
+
+    return centered_visible_range(
+        visible_range.start_ns + (positive_width(visible_range) / 2),
+        dataset_range,
+        minimum_width);
 }
 
 } // namespace tradereview::app

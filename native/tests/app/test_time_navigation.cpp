@@ -79,6 +79,38 @@ void test_time_navigation_builds_centered_visible_range()
     tradereview::core::assert_equal(clamped.end_ns, 6LL * 60LL * kMinuteNs, "range keeps requested width");
 }
 
+void test_time_navigation_expands_short_range_for_coarse_period()
+{
+    const tradereview::core::TimeRange dataset{0, 240LL * 60LL * kMinuteNs};
+    const tradereview::core::TimeRange visible{100LL * 60LL * kMinuteNs, 106LL * 60LL * kMinuteNs};
+
+    const auto adjusted = tradereview::app::adjusted_visible_range_for_period(
+        visible,
+        dataset,
+        "1D",
+        5);
+
+    tradereview::core::assert_equal(
+        adjusted.end_ns - adjusted.start_ns,
+        5LL * 24LL * 60LL * kMinuteNs,
+        "daily range expands to minimum bars");
+}
+
+void test_time_navigation_keeps_intraday_range_when_it_already_has_enough_bars()
+{
+    const tradereview::core::TimeRange dataset{0, 240LL * 60LL * kMinuteNs};
+    const tradereview::core::TimeRange visible{100LL * 60LL * kMinuteNs, 106LL * 60LL * kMinuteNs};
+
+    const auto adjusted = tradereview::app::adjusted_visible_range_for_period(
+        visible,
+        dataset,
+        "1h",
+        5);
+
+    tradereview::core::assert_equal(adjusted.start_ns, visible.start_ns, "intraday start is unchanged");
+    tradereview::core::assert_equal(adjusted.end_ns, visible.end_ns, "intraday end is unchanged");
+}
+
 struct RegisterTimeNavigationTests {
     RegisterTimeNavigationTests()
     {
@@ -94,6 +126,12 @@ struct RegisterTimeNavigationTests {
         tradereview::tests::register_test(
             "time navigation builds centered visible range",
             test_time_navigation_builds_centered_visible_range);
+        tradereview::tests::register_test(
+            "time navigation expands short range for coarse period",
+            test_time_navigation_expands_short_range_for_coarse_period);
+        tradereview::tests::register_test(
+            "time navigation keeps intraday range when it already has enough bars",
+            test_time_navigation_keeps_intraday_range_when_it_already_has_enough_bars);
     }
 };
 

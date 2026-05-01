@@ -25,6 +25,7 @@ constexpr std::int64_t kNanosecondsPerHour = 60LL * 60LL * 1000LL * 1000LL * 100
 constexpr std::int64_t kNanosecondsPerSecond = 1000LL * 1000LL * 1000LL;
 constexpr std::int64_t kInitialWindowWidthNs = 6LL * kNanosecondsPerHour;
 constexpr int kDefaultPixelWidth = 1200;
+constexpr int kMinimumRequestedPeriodBars = 5;
 constexpr std::size_t kReplayMaxTicksPerFrame = 20000;
 constexpr std::size_t kReplayMaxBarsPerPeriod = 1200;
 
@@ -160,6 +161,7 @@ data::CandleWindowRequest makeWindowRequest(
     chart::ChartWorkspaceWidget& workspace,
     std::uint64_t chart_id,
     core::TimeRange visible_range,
+    core::TimeRange dataset_range,
     const std::string& fallback_period)
 {
     data::CandleWindowRequest request;
@@ -169,7 +171,11 @@ data::CandleWindowRequest makeWindowRequest(
     if (request.requested_period.empty()) {
         request.requested_period = fallback_period;
     }
-    request.visible_range = visible_range;
+    request.visible_range = adjusted_visible_range_for_period(
+        visible_range,
+        dataset_range,
+        request.requested_period,
+        kMinimumRequestedPeriodBars);
     request.pixel_width = chartPixelWidth(workspace, chart_id);
     request.requested_indicators = workspace.requested_indicators(chart_id);
     return request;
@@ -255,7 +261,7 @@ data::ScheduleSubmitStatus DataLoadController::request_window_async(
         throw std::runtime_error("no dataset loaded");
     }
 
-    auto request = makeWindowRequest(workspace, chart_id, visible_range, requested_period_);
+    auto request = makeWindowRequest(workspace, chart_id, visible_range, dataset_info_.tick_range, requested_period_);
     return submit_window_async(std::move(request), workspace, receiver, std::move(callback));
 }
 
@@ -459,7 +465,7 @@ data::ScheduleSubmitStatus DataLoadController::request_all_enabled_windows_async
     auto first_request = true;
     const auto chart_ids = workspace.enabled_chart_ids();
     for (const auto chart_id : chart_ids) {
-        auto request = makeWindowRequest(workspace, chart_id, visible_range, requested_period_);
+        auto request = makeWindowRequest(workspace, chart_id, visible_range, dataset_info_.tick_range, requested_period_);
         const auto status = submit_window_async(std::move(request), workspace, receiver, callback);
         if (first_request) {
             first_status = status;
