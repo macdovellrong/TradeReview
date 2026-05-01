@@ -84,6 +84,11 @@ void ChartPanelWidget::setPeriodChangedCallback(PeriodChangedCallback callback)
     period_changed_callback_ = std::move(callback);
 }
 
+void ChartPanelWidget::setPopoutCallback(PopoutCallback callback)
+{
+    popout_callback_ = std::move(callback);
+}
+
 bool ChartPanelWidget::set_loading(bool loading)
 {
     return chart_view_->set_loading(loading);
@@ -127,6 +132,11 @@ void ChartPanelWidget::connect_toolbar()
     });
     toolbar_->setPriceAxisFitCallback([this]() {
         chart_view_->fit_price_axis_to_visible_range();
+    });
+    toolbar_->setPopoutCallback([this]() {
+        if (popout_callback_) {
+            popout_callback_(chart_id_);
+        }
     });
     toolbar_->setSelectedPeriod(toolbar_period(requested_period_));
 }

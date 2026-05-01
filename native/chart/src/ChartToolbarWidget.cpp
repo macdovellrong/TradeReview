@@ -126,6 +126,14 @@ ChartToolbarWidget::ChartToolbarWidget(QWidget* parent)
         }
     });
     indicator_layout->addWidget(fitYButton);
+
+    auto* popButton = createToolbarButton(indicator_widget, "Pop", 52);
+    connect(popButton, &QPushButton::clicked, this, [this]() {
+        if (popout_callback_) {
+            popout_callback_();
+        }
+    });
+    indicator_layout->addWidget(popButton);
 }
 
 void ChartToolbarWidget::setStatusCallback(StatusCallback callback)
@@ -146,6 +154,11 @@ void ChartToolbarWidget::setPeriodSelectedCallback(PeriodSelectedCallback callba
 void ChartToolbarWidget::setPriceAxisFitCallback(PriceAxisFitCallback callback)
 {
     price_axis_fit_callback_ = std::move(callback);
+}
+
+void ChartToolbarWidget::setPopoutCallback(PopoutCallback callback)
+{
+    popout_callback_ = std::move(callback);
 }
 
 void ChartToolbarWidget::setSelectedPeriod(const QString& period)

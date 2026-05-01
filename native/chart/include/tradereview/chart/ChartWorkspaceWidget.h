@@ -21,6 +21,7 @@ namespace tradereview::chart {
 class ChartPanelWidget;
 class ChartToolbarWidget;
 class ChartViewWidget;
+class FloatingChartWindow;
 
 class ChartWorkspaceWidget final : public QWidget {
 public:
@@ -28,6 +29,7 @@ public:
     using ReloadRequestCallback = std::function<void(std::uint64_t, core::TimeRange)>;
 
     explicit ChartWorkspaceWidget(QWidget* parent = nullptr);
+    ~ChartWorkspaceWidget() override;
 
     void setStatusCallback(StatusCallback callback);
     void setReloadRequestCallback(ReloadRequestCallback callback);
@@ -51,6 +53,8 @@ public:
     [[nodiscard]] std::vector<std::uint64_t> enabled_chart_ids() const;
     [[nodiscard]] std::size_t chart_count() const;
     [[nodiscard]] ChartLayoutMode layout_mode() const;
+    bool detachChart(std::uint64_t chart_id);
+    bool reattachChart(std::uint64_t chart_id);
     bool syncCrosshairFrom(std::uint64_t source_chart_id, std::int64_t timestamp_ns, double price);
     bool syncCenterFrom(
         std::uint64_t source_chart_id,
@@ -59,15 +63,23 @@ public:
     bool syncYCenterFrom(std::uint64_t source_chart_id, double price);
 
 private:
+    struct DetachedChartWindow {
+        std::uint64_t chart_id = 0;
+        FloatingChartWindow* window = nullptr;
+    };
+
     void rebuild_layout();
     void reset_content_widget();
     void connect_panel(ChartPanelWidget& panel);
     void refresh_sync_enabled_charts();
+    [[nodiscard]] FloatingChartWindow* floating_window(std::uint64_t chart_id) const;
+    void reattach_disabled_detached_charts();
 
     ChartWorkspaceState state_;
     QVBoxLayout* root_layout_ = nullptr;
     QWidget* content_ = nullptr;
     std::vector<ChartPanelWidget*> panels_;
+    std::vector<DetachedChartWindow> detached_windows_;
     StatusCallback status_callback_;
     ReloadRequestCallback reload_request_callback_;
     sync::CrosshairSyncController crosshair_sync_controller_;

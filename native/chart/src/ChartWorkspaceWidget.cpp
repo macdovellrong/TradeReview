@@ -3,6 +3,7 @@
 #include "tradereview/chart/ChartPanelWidget.h"
 #include "tradereview/chart/ChartPeriod.h"
 #include "tradereview/chart/ChartViewWidget.h"
+#include "tradereview/chart/FloatingChartWindow.h"
 
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -45,6 +46,23 @@ ChartWorkspaceWidget::ChartWorkspaceWidget(QWidget* parent)
     rebuild_layout();
 }
 
+ChartWorkspaceWidget::~ChartWorkspaceWidget()
+{
+    for (auto& detached : detached_windows_) {
+        if (detached.window == nullptr) {
+            continue;
+        }
+        detached.window->setCloseCallback({});
+        if (auto* target_panel = detached.window->take_panel(); target_panel != nullptr) {
+            target_panel->setParent(this);
+            target_panel->hide();
+        }
+        delete detached.window;
+        detached.window = nullptr;
+    }
+    detached_windows_.clear();
+}
+
 void ChartWorkspaceWidget::setStatusCallback(StatusCallback callback)
 {
     status_callback_ = std::move(callback);
@@ -63,6 +81,7 @@ bool ChartWorkspaceWidget::setChartCount(int count)
     if (!state_.set_chart_count(count)) {
         return false;
     }
+    reattach_disabled_detached_charts();
     refresh_sync_enabled_charts();
     rebuild_layout();
     return true;
@@ -87,6 +106,9 @@ bool ChartWorkspaceWidget::setRequestedPeriod(std::uint64_t chart_id, std::strin
     auto canonical_period = canonical_chart_period(period);
     const auto changed = state_.set_chart_period(chart_id, canonical_period);
     target_panel->set_requested_period(std::move(canonical_period));
+    if (auto* window = floating_window(chart_id); window != nullptr) {
+        window->refresh_title();
+    }
     return changed;
 }
 
@@ -220,6 +242,62 @@ ChartLayoutMode ChartWorkspaceWidget::layout_mode() const
     return state_.layout_mode();
 }
 
+bool ChartWorkspaceWidget::detachChart(std::uint64_t chart_id)
+{
+    if (auto* existing = floating_window(chart_id); existing != nullptr) {
+        existing->raise();
+        existing->activateWindow();
+        return false;
+    }
+
+    auto* target_panel = panel(chart_id);
+    if (target_panel == nullptr || !state_.detach_chart(chart_id)) {
+        return false;
+    }
+
+    auto* window = new FloatingChartWindow(target_panel, this);
+    window->setCloseCallback([this](std::uint64_t detached_chart_id) {
+        reattachChart(detached_chart_id);
+    });
+    detached_windows_.push_back(DetachedChartWindow{chart_id, window});
+    window->show();
+    rebuild_layout();
+    return true;
+}
+
+bool ChartWorkspaceWidget::reattachChart(std::uint64_t chart_id)
+{
+    const auto found = std::find_if(
+        detached_windows_.begin(),
+        detached_windows_.end(),
+        [chart_id](const DetachedChartWindow& detached) {
+            return detached.chart_id == chart_id;
+        });
+    if (found == detached_windows_.end()) {
+        return false;
+    }
+
+    auto* window = found->window;
+    ChartPanelWidget* target_panel = nullptr;
+    if (window != nullptr) {
+        window->setCloseCallback({});
+        target_panel = window->take_panel();
+        window->hide();
+        window->deleteLater();
+    }
+    detached_windows_.erase(found);
+    state_.reattach_chart(chart_id);
+    if (state_.chart_enabled(chart_id)) {
+        state_.set_active_chart_id(chart_id);
+    }
+    if (target_panel != nullptr) {
+        target_panel->setParent(this);
+        target_panel->show();
+    }
+    rebuild_layout();
+    return true;
+}
+
 bool ChartWorkspaceWidget::syncCrosshairFrom(std::uint64_t source_chart_id, std::int64_t timestamp_ns, double price)
 {
     return crosshair_sync_controller_.sync_crosshair_from(source_chart_id, timestamp_ns, price);
@@ -241,7 +319,7 @@ bool ChartWorkspaceWidget::syncYCenterFrom(std::uint64_t source_chart_id, double
 void ChartWorkspaceWidget::rebuild_layout()
 {
     reset_content_widget();
-    const auto ids = state_.enabled_chart_ids();
+    const auto ids = state_.visible_chart_ids();
 
     if (state_.layout_mode() == ChartLayoutMode::Tabs) {
         auto* layout = new QVBoxLayout(content_);
@@ -325,6 +403,9 @@ void ChartWorkspaceWidget::reset_content_widget()
     }
 
     for (auto* panel_widget : panels_) {
+        if (panel_widget != nullptr && state_.chart_detached(panel_widget->chart_id())) {
+            continue;
+        }
         panel_widget->hide();
         panel_widget->setParent(this);
     }
@@ -348,6 +429,12 @@ void ChartWorkspaceWidget::connect_panel(ChartPanelWidget& panel_widget)
     });
     panel_widget.setPeriodChangedCallback([this](std::uint64_t chart_id, const std::string& period) {
         state_.set_chart_period(chart_id, canonical_chart_period(period));
+        if (auto* window = floating_window(chart_id); window != nullptr) {
+            window->refresh_title();
+        }
+    });
+    panel_widget.setPopoutCallback([this](std::uint64_t chart_id) {
+        detachChart(chart_id);
     });
     panel_widget.chart_view().set_crosshair_moved_callback([this, chart_id](std::int64_t timestamp_ns, double price) {
         crosshair_sync_controller_.sync_crosshair_from(chart_id, timestamp_ns, price);
@@ -367,6 +454,33 @@ void ChartWorkspaceWidget::connect_panel(ChartPanelWidget& panel_widget)
         [&panel_widget](const sync::YCenterUpdate& update) {
             panel_widget.chart_view().sync_y_center(update.price);
         });
+}
+
+FloatingChartWindow* ChartWorkspaceWidget::floating_window(std::uint64_t chart_id) const
+{
+    const auto found = std::find_if(
+        detached_windows_.begin(),
+        detached_windows_.end(),
+        [chart_id](const DetachedChartWindow& detached) {
+            return detached.chart_id == chart_id;
+        });
+    if (found == detached_windows_.end()) {
+        return nullptr;
+    }
+    return found->window;
+}
+
+void ChartWorkspaceWidget::reattach_disabled_detached_charts()
+{
+    std::vector<std::uint64_t> disabled_detached_ids;
+    for (const auto& detached : detached_windows_) {
+        if (!state_.chart_enabled(detached.chart_id)) {
+            disabled_detached_ids.push_back(detached.chart_id);
+        }
+    }
+    for (const auto chart_id : disabled_detached_ids) {
+        reattachChart(chart_id);
+    }
 }
 
 void ChartWorkspaceWidget::refresh_sync_enabled_charts()

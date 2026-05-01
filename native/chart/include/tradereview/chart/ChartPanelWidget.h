@@ -19,6 +19,7 @@ class ChartPanelWidget final : public QWidget {
 public:
     using ReloadRequestCallback = std::function<void(std::uint64_t, core::TimeRange)>;
     using PeriodChangedCallback = std::function<void(std::uint64_t, const std::string&)>;
+    using PopoutCallback = std::function<void(std::uint64_t)>;
 
     explicit ChartPanelWidget(std::uint64_t chart_id, QWidget* parent = nullptr);
 
@@ -28,6 +29,7 @@ public:
     void setStatusCallback(ChartToolbarWidget::StatusCallback callback);
     void setReloadRequestCallback(ReloadRequestCallback callback);
     void setPeriodChangedCallback(PeriodChangedCallback callback);
+    void setPopoutCallback(PopoutCallback callback);
     bool set_loading(bool loading);
     bool apply_window(data::CandleWindow window);
     void trigger_drawing_action(const QString& action);
@@ -47,6 +49,7 @@ private:
     ChartViewWidget* chart_view_ = nullptr;
     ReloadRequestCallback reload_request_callback_;
     PeriodChangedCallback period_changed_callback_;
+    PopoutCallback popout_callback_;
 };
 
 } // namespace tradereview::chart

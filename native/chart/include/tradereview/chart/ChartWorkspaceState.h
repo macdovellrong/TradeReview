@@ -27,20 +27,26 @@ public:
     [[nodiscard]] ChartLayoutMode layout_mode() const;
     [[nodiscard]] std::uint64_t active_chart_id() const;
     [[nodiscard]] std::vector<std::uint64_t> enabled_chart_ids() const;
+    [[nodiscard]] std::vector<std::uint64_t> visible_chart_ids() const;
+    [[nodiscard]] std::vector<std::uint64_t> detached_chart_ids() const;
     [[nodiscard]] const ChartSlotState* chart_slot(std::uint64_t chart_id) const;
     [[nodiscard]] ChartSlotState* chart_slot(std::uint64_t chart_id);
     [[nodiscard]] std::string chart_period(std::uint64_t chart_id) const;
     [[nodiscard]] bool chart_enabled(std::uint64_t chart_id) const;
+    [[nodiscard]] bool chart_detached(std::uint64_t chart_id) const;
 
     bool set_chart_count(int count);
     bool set_layout_mode(ChartLayoutMode mode);
     bool set_active_chart_id(std::uint64_t chart_id);
     bool set_chart_period(std::uint64_t chart_id, std::string period);
+    bool detach_chart(std::uint64_t chart_id);
+    bool reattach_chart(std::uint64_t chart_id);
 
 private:
     [[nodiscard]] static std::size_t clamped_chart_count(int count);
 
     std::vector<ChartSlotState> slots_;
+    std::vector<std::uint64_t> detached_chart_ids_;
     std::size_t chart_count_ = 4;
     ChartLayoutMode layout_mode_ = ChartLayoutMode::Tabs;
     std::uint64_t active_chart_id_ = 1;

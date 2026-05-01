@@ -46,6 +46,22 @@ std::vector<std::uint64_t> ChartWorkspaceState::enabled_chart_ids() const
     return ids;
 }
 
+std::vector<std::uint64_t> ChartWorkspaceState::visible_chart_ids() const
+{
+    auto ids = enabled_chart_ids();
+    ids.erase(
+        std::remove_if(ids.begin(), ids.end(), [this](std::uint64_t chart_id) {
+            return chart_detached(chart_id);
+        }),
+        ids.end());
+    return ids;
+}
+
+std::vector<std::uint64_t> ChartWorkspaceState::detached_chart_ids() const
+{
+    return detached_chart_ids_;
+}
+
 const ChartSlotState* ChartWorkspaceState::chart_slot(std::uint64_t chart_id) const
 {
     const auto found = std::find_if(slots_.begin(), slots_.end(), [chart_id](const ChartSlotState& slot) {
@@ -80,6 +96,11 @@ std::string ChartWorkspaceState::chart_period(std::uint64_t chart_id) const
 bool ChartWorkspaceState::chart_enabled(std::uint64_t chart_id) const
 {
     return chart_id >= 1 && chart_id <= chart_count_;
+}
+
+bool ChartWorkspaceState::chart_detached(std::uint64_t chart_id) const
+{
+    return std::find(detached_chart_ids_.begin(), detached_chart_ids_.end(), chart_id) != detached_chart_ids_.end();
 }
 
 bool ChartWorkspaceState::set_chart_count(int count)
@@ -122,6 +143,25 @@ bool ChartWorkspaceState::set_chart_period(std::uint64_t chart_id, std::string p
         return false;
     }
     slot->requested_period = std::move(canonical_period);
+    return true;
+}
+
+bool ChartWorkspaceState::detach_chart(std::uint64_t chart_id)
+{
+    if (!chart_enabled(chart_id) || chart_detached(chart_id)) {
+        return false;
+    }
+    detached_chart_ids_.push_back(chart_id);
+    return true;
+}
+
+bool ChartWorkspaceState::reattach_chart(std::uint64_t chart_id)
+{
+    const auto found = std::find(detached_chart_ids_.begin(), detached_chart_ids_.end(), chart_id);
+    if (found == detached_chart_ids_.end()) {
+        return false;
+    }
+    detached_chart_ids_.erase(found);
     return true;
 }
 

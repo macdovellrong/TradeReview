@@ -80,6 +80,24 @@ void test_workspace_state_active_chart_follows_enabled_charts()
     tradereview::core::assert_true(!state.set_active_chart_id(4), "disabled active chart is rejected");
 }
 
+void test_workspace_state_detaches_enabled_charts_from_visible_layout()
+{
+    tradereview::chart::ChartWorkspaceState state;
+
+    tradereview::core::assert_true(state.detach_chart(2), "enabled chart can detach");
+    tradereview::core::assert_true(state.chart_detached(2), "chart two is detached");
+    const auto enabled = state.enabled_chart_ids();
+    const auto visible = state.visible_chart_ids();
+
+    tradereview::core::assert_equal(enabled.size(), std::size_t{4}, "detached chart remains enabled");
+    tradereview::core::assert_equal(visible.size(), std::size_t{3}, "detached chart is removed from visible layout");
+    tradereview::core::assert_equal(visible[0], std::uint64_t{1}, "first visible chart");
+    tradereview::core::assert_equal(visible[1], std::uint64_t{3}, "second visible chart skips detached chart");
+    tradereview::core::assert_true(!state.detach_chart(2), "detaching same chart is a no-op");
+    tradereview::core::assert_true(state.reattach_chart(2), "detached chart can reattach");
+    tradereview::core::assert_true(!state.chart_detached(2), "chart two is no longer detached");
+}
+
 struct RegisterChartWorkspaceStateTests {
     RegisterChartWorkspaceStateTests()
     {
@@ -95,6 +113,9 @@ struct RegisterChartWorkspaceStateTests {
         tradereview::tests::register_test(
             "workspace state active chart follows enabled charts",
             test_workspace_state_active_chart_follows_enabled_charts);
+        tradereview::tests::register_test(
+            "workspace state detaches enabled charts from visible layout",
+            test_workspace_state_detaches_enabled_charts_from_visible_layout);
     }
 };
 
